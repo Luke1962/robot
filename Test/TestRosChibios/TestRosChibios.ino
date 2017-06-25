@@ -22,13 +22,6 @@
 // ///		Configuration Properties >C++ > Path											///
 // ////////////////////////////////////////////////////////////////////////////////////////////
 #pragma region LIBRERIE
-/// ///////////////////////////////////////////////////////////////////////////////
-// ROS
-/// ///////////////////////////////////////////////////////////////////////////////
-#include <ros.h>
-#include <ros/duration.h>
-#include <ros/time.h> //non serve
-#include <sensor_msgs/Range.h>
 
 #include <digitalWriteFast.h>
 #include <ChibiOS_AVR.h>
@@ -105,12 +98,15 @@ struct robot_c robot;	//was  struct robot_c robot;
 // ////////////////////////////////////////////////////////////////////////////////////////////
 //  CmdMessenger object to the default Serial port
 // ////////////////////////////////////////////////////////////////////////////////////////////
-#include <CmdMessenger2/CmdMessenger2.h>
-static CmdMessenger2 cmdMMI = CmdMessenger2(SERIAL_MMI);
-static CmdMessenger2 cmdPC = CmdMessenger2(SERIAL_MSG);
-#include <MyRobotLibs\RobotInterfaceCommands2.h>
-// usare le macro  MSG per inviare messaggi sia su Serial_PC, sia Serial_MMI
-//------------------------------------------------------------------------------
+#if OPT_MMI
+	#include <CmdMessenger2/CmdMessenger2.h>
+	static CmdMessenger2 cmdMMI = CmdMessenger2(SERIAL_MMI);
+	static CmdMessenger2 cmdPC = CmdMessenger2(SERIAL_MSG);
+	#include <MyRobotLibs\RobotInterfaceCommands2.h>
+	// usare le macro  MSG per inviare messaggi sia su Serial_PC, sia Serial_MMI
+	//------------------------------------------------------------------------------
+#endif
+
 #pragma region DEFINIZIONE MAILBOX VOICE
 // mailbox size and memory pool object count
 const size_t MBOX_COUNT = 6;
@@ -203,7 +199,16 @@ void countDown(int seconds) {
 // ////////////////////////////////////////////////////////////////////////////////////////////
 
 #pragma endregion
+
+
+/// ///////////////////////////////////////////////////////////////////////////////
+// ROS
+/// ///////////////////////////////////////////////////////////////////////////////
 #pragma region ROS
+#include <ros.h>
+#include <ros/duration.h>
+#include <ros/time.h> //non serve
+#include <sensor_msgs/Range.h>
 
 	ros::Time time;
 
@@ -500,6 +505,8 @@ static THD_FUNCTION(thdReadSensorsLR, arg) {
 // thread   MMIcommands - ricezione comandi da MMI
 //////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////
+#if OPT_MMI
+
 static THD_WORKING_AREA(waMMIcommands, 200);
 static THD_FUNCTION(thdMMIcommands, arg) {
 	//static msg_t MMIcommands(void *arg)
@@ -526,12 +533,15 @@ static THD_FUNCTION(thdMMIcommands, arg) {
 		//else										{chThdSleepMilliseconds(100);}// Sleep for n milliseconds.
 	}
 }
+#endif
 
 //////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////
 // thread   PCcommands - ricezione comandi da PC (per Debug)
 //////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////
+#if OPT_MMI
+
 static THD_WORKING_AREA(waPCcommands, 100);
 static THD_FUNCTION(thdPCcommands, arg) {
 	// Setup CommandMessenger -----------------------------------------------------
@@ -561,6 +571,7 @@ static THD_FUNCTION(thdPCcommands, arg) {
 
 	}
 }
+
 // invia un  messaggio con la descrizione dell'evento e lo resetta 
 void msgEventHR() {
 	if (robot.status.pendingEvents.bumperF) { MSG("bumperF  EVENT");robot.status.pendingEvents.bumperF = false; }
@@ -712,9 +723,12 @@ static THD_FUNCTION(thdSendStatusLR, arg) {
 	}
 }
 
+#endif
+
 //////////////////////////////////////////////////////////////////////////////////
 //  THREAD  B R A I N      ///////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////
+/*
 #pragma region  Processo	B R A I N    
 static THD_WORKING_AREA(waBrain, 100);
 static THD_FUNCTION(thdBrain, arg)
@@ -902,7 +916,7 @@ static THD_FUNCTION(thdBrain, arg)
 }
 #pragma endregion 
 
-
+*/
 
 // ////////////////////////////////////////////////////////////////////////////////
 /// ///////////////////////////////////////////////////////////////////////////////
@@ -1064,6 +1078,8 @@ void thdSetup() {
 	while (1) {}
 
 }
+#pragma endregion
+
 void setup_robot() {
 	LEDTOP_R_ON	// Indica inizio SETUP Phase
 
@@ -1119,6 +1135,5 @@ void loop() {
 	// not used
 }
 
-#pragma endregion
 
 
