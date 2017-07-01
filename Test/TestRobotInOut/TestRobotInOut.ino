@@ -1,6 +1,6 @@
-// COMANDI PER TEST: 
-//AVANTI 20 E INDIETRO 20: 
-//19,20;19,-20;
+// verifica il funzionamento dei vari componenti HW
+// no ROS
+// usa MMI 
 
 
 //////////////////////////////////////////////////////////////////////////////////
@@ -45,10 +45,9 @@
 //#include <StackArray.h>
 #include <avr/interrupt.h>
 
-
 #include <Arduino.h>	//per AttachInterrupt
 
-
+#include <I2Cdev\I2Cdev.h>
 
 #pragma endregion
 
@@ -57,7 +56,6 @@
 // ////////////////////////////////////////////////////////////////////////////////////////////
 #pragma region CREAZIONE OGGETTI GLOBALI
 	#if OPT_MPU6050
-		#include <I2Cdev\I2Cdev.h>
 
 		#include <MPU6050\MPU6050_6Axis_MotionApps20.h>
 		//	#include <MPU6050\MPU6050.h> // not necessary if using MotionApps include file
@@ -160,15 +158,156 @@
 		//#define HIGH_SPEED
 		//#define HIGH_ACCURACY
 
+
+		bool setupLDS() {
+			byte failCount = 0;
+			bool initDone = false;
+			while (!initDone && ( failCount < 10))
+			{
+				MSG("LDS init...");
+				if (LDS.init())
+				{
+					MSG("LDS OK;");
+					initDone = true;
+					return initDone;
+				}
+				else
+				{
+					MSG("LDS   ..FAIL;");
+					delay(500);
+					failCount++;
+				}
+
+			}
+			return initDone;
+}
+
 	#endif // OPT_LDS
 
 
 
 	#if OPT_STEPPERLDS
+		#include <Timer5/Timer5.h>
+		#include <PinChangeInt\PinChangeInt.h>	//https://github.com/NicoHood/PinChangeInterrupt
 
 		#include <MyStepper\myStepper.h>
-		myStepper_c myLDSstepper(PIN_STEPPERLDS_CK, PIN_STEPPERLDS_ENABLE, PIN_STEPPERLDS_CW, PIN_STEPPERLDS_STOP);
+		myStepper_c myLDSstepper(PIN_STEPPERLDS_CK, PIN_STEPPERLDS_ENABLE, PIN_STEPPERLDS_CW, PIN_STEPPERLDS_END);
+
+		byte ckState = 0;
+
+
+		#define MINIMUM_INTERRUPT_INTERVAL_MSEC 1
+
+		// Genera il clock per LDS Stepper
+		ISR(timer5Event)
+		{
+			// Reset Timer1 (resetTimer1 should be the first operation for better timer precision)
+			resetTimer5();
+			// For a smaller and faster code, the line above could safely be replaced with a call
+			// to the function resetTimer1Unsafe() as, despite its name, it IS safe to call
+			// that function in here (interrupts are disabled)
+
+			// Make sure to do your work as fast as possible, since interrupts are automatically
+			// disabled when this event happens (refer to interrupts() and noInterrupts() for
+			// more information on that)
+
+			// Toggle led's state
+			ckState ^= 1;
+			//digitalWriteFast(13, ckState);
+
+			digitalWriteFast(PIN_STEPPERLDS_CK, ckState);
+		}
+
+
+		void ISRstepperSwitchHome() {
+			static unsigned long last_interrupt_timeHome = 0;
+			unsigned long interrupt_time = millis();
+			// If interrupts come faster than 200ms, assume it's a bounce and ignore
+			if (interrupt_time - last_interrupt_timeHome > MINIMUM_INTERRUPT_INTERVAL_MSEC)
+			{
+					myLDSstepper.setHomePosition(true);
+					myLDSstepper.setCW(true);  ///.disable();
+			}
+			last_interrupt_timeHome = interrupt_time;
+		}
+
+		void ISRstepperSwitchEnd() {
+			static unsigned long last_interrupt_timeEnd = 0;
+			unsigned long interrupt_time = millis();
+			// If interrupts come faster than 200ms, assume it's a bounce and ignore
+			if (interrupt_time - last_interrupt_timeEnd > MINIMUM_INTERRUPT_INTERVAL_MSEC)
+			{
+
+					myLDSstepper.setEndPosition(true);
+					myLDSstepper.setCW(false);  ///.disable();
+			}
+			last_interrupt_timeEnd = interrupt_time;
+		}
+
+
+		// versione pe Interrupt su Change
+		void ISRldsH() {
+			static unsigned long last_interrupt_timeHome = 0;
+			unsigned long interrupt_time = millis();
+			// If interrupts come faster than 200ms, assume it's a bounce and ignore
+			if (interrupt_time - last_interrupt_timeHome > MINIMUM_INTERRUPT_INTERVAL_MSEC)
+			{
+				int x = digitalReadFast(PIN_STEPPERLDS_HOME);
+				if (x == 0)
+				{
+					myLDSstepper.setHomePosition(true);
+					myLDSstepper.setCW(true);  ///.disable();
+
+				}
+				else
+				{
+					myLDSstepper.setHomePosition(false);
+					myLDSstepper.enable();
+
+				}
+
+			}
+			last_interrupt_timeHome = interrupt_time;
+		}
+		void ISRldsE() {
+			static unsigned long last_interrupt_timeEnd = 0;
+			unsigned long interrupt_time = millis();
+			// If interrupts come faster than 200ms, assume it's a bounce and ignore
+			if (interrupt_time - last_interrupt_timeEnd > MINIMUM_INTERRUPT_INTERVAL_MSEC)
+			{
+				int x = digitalReadFast(PIN_STEPPERLDS_END);
+				if (x == 0)
+				{
+					//myLDSstepper.setHomePosition(true);
+					myLDSstepper.setCW(false);  ///.disable();
+
+				}
+				else
+				{
+					//myLDSstepper.setHomePosition(false);
+					myLDSstepper.enable();
+
+				}
+
+			}
+			last_interrupt_timeEnd = interrupt_time;
+		}
+
+
+		void setupStepperLDS(float speed = 2*PI) {
+			pinMode(PIN_STEPPERLDS_HOME, INPUT_PULLUP);// open >+5 closed =gnd
+			pinMode(PIN_STEPPERLDS_END, INPUT_PULLUP);// open >+5 closed =gnd
+			//attachPinChangeInterrupt(PIN_STEPPERLDS_HOME, ISRstepperSwitchHome, CHANGE);  // add more attachInterrupt code as required
+			//attachPinChangeInterrupt(PIN_STEPPERLDS_END, ISRstepperSwitchEnd, CHANGE);  // add more attachInterrupt code as required
+
+			attachPinChangeInterrupt(PIN_STEPPERLDS_HOME, ISRstepperSwitchHome, FALLING);  // add more attachInterrupt code as required
+			attachPinChangeInterrupt(PIN_STEPPERLDS_END, ISRstepperSwitchEnd, FALLING);  // add more attachInterrupt code as required
+																						// start stepper
+			myLDSstepper.goRadsPerSecond(speed);
+}
+
 	#endif
+
 
 
 	// per i test
@@ -183,6 +322,100 @@
 
 
 	// ////////////////////////////////////////////////////////////////////////////////////////////
+	#if OPT_ENCODERS
+	// dopo dichiarazione di robot
+		// ########################################################################################
+		// ########################################################################################
+		// ENCODER ISR
+		// opera solo se  targetEncoderThicks > 0 ed ogni ISR_MINMUM_INTERVAL_MSEC
+		// ########################################################################################
+		// ########################################################################################
+		// Interrupt service routines for the right motor's quadrature encoder
+		volatile bool interruptFlag = false;
+		volatile uint32_t robotstatussensorsEncR = 0;
+		volatile unsigned long isrCurrCallmSec = 0;
+		volatile unsigned long isrLastCallmSec = 0;
+		
+		#define ISR_MINMUM_INTERVAL_MSEC 20  //deve essere < 30 = circa ROBOT_MOTOR_STEPS_PER_ENCODERTICK * ROBOT_MOTOR_CLOCK_microsecondMIN /1000 I= 12.5*2500/1000
+/*		void ISRencoder() //versione che usa targetEncoderThicks
+		{
+			if (robot.status.cmd.targetEncoderThicks > 0) //faccio lavorare l'ISR solo se targetEncoderThicks> 0
+			{
+				isrCurrCallmSec = millis();
+
+				if (isrCurrCallmSec > (isrLastCallmSec + ISR_MINMUM_INTERVAL_MSEC))
+				{
+					//LEDTOP_B_ON
+					isrLastCallmSec = isrCurrCallmSec;
+					robot.status.sensors.EncR += 1;
+					if (robot.status.sensors.EncR > robot.status.cmd.targetEncoderThicks)
+					{
+						//LEDTOP_G_ON
+							robot.stop();
+						//MOTORS_DISABLE
+						robot.status.cmd.targetEncoderThicks = 0;
+
+					}
+					LEDTOP_B_OFF
+				}
+
+			}
+
+		}
+	*/
+
+		// versione per comandi basati su cmd_vel
+		// incrementa solo il contatore
+		// chi legge deve poi  resettarlo e applicare le logiche per capire se
+		// il movimento era linerare o rotatorio e  in quale direzione
+		void ISRencoderR() {		
+			isrCurrCallmSec = millis();
+
+			// trascorso tempo minimo?
+			if (isrCurrCallmSec > (isrLastCallmSec + ISR_MINMUM_INTERVAL_MSEC))
+			{
+				//lettura encoder
+				robot.status.sensors.encR = digitalReadFast(Pin_EncRa);
+				// cambiato il valore ?
+				if (robot.status.sensors.encRprec != robot.status.sensors.encR)
+				{
+					TOGGLEPIN(Pin_LED_TOP_G);
+					isrLastCallmSec = isrCurrCallmSec;
+					// incrementa
+					robot.status.sensors.encR += 1;
+					robot.status.sensors.encRprec = robot.status.sensors.encR;
+				}
+			}
+		}
+
+		void setupEncoders() {
+			pinMode(Pin_EncRa, INPUT);// open >+5 closed =gnd
+		// was 	attachInterrupt(digitalPinToInterrupt(Pin_EncRa), ISRencoderR, CHANGE);
+			attachPinChangeInterrupt(Pin_EncRa, ISRencoderR, CHANGE);  // add more attachInterrupt code as required
+
+		}
+
+		void readEncoders(float * dx, float * dth) { // rirorna la lettura degli encoder e li azzera
+			MSG2("encR ",robot.status.sensors.encR);
+			if (robot.status.cmd.commandDir == commandDir_e::GOF)
+			{
+				*dx = robot.status.sensors.encR* ROBOT_MOTOR_STEPS_PER_ENCODERTICK / ROBOT_M2STEPS;
+			}
+			if (robot.status.cmd.commandDir == commandDir_e::GOB)
+			{
+				*dx = -robot.status.sensors.encR* ROBOT_MOTOR_STEPS_PER_ENCODERTICK / ROBOT_M2STEPS;
+				*dth = 0.0;
+			}
+			if (robot.status.cmd.commandDir == commandDir_e::GOR)
+			{
+				*dx = 0.0;
+				*dth = -robot.status.sensors.encR* ROBOT_MOTOR_STEPS_PER_ENCODERTICK / ROBOT_RAD2STEPS ;
+			}
+
+			robot.status.sensors.encR = 0;
+			robot.status.sensors.encL = 0;
+		}
+	#endif
 
 
 	// ////////////////////////////////////////////////////////////////////////////////////////////
@@ -195,46 +428,6 @@
 	//------------------------------------------------------------------------------
 
 
-
-
-	// ########################################################################################
-	// ########################################################################################
-	// ENCODER ISR
-	// opera solo se  targetEncoderThicks > 0 ed ogni ISR_MINMUM_INTERVAL_MSEC
-	// ########################################################################################
-	// ########################################################################################
-	// Interrupt service routines for the right motor's quadrature encoder
-	volatile bool interruptFlag = false;
-	volatile uint32_t robotstatussensorsEncR = 0;
-	volatile unsigned long isrCurrCallmSec = 0;
-	volatile unsigned long isrLastCallmSec = 0;
-
-	#define ISR_MINMUM_INTERVAL_MSEC 25  // 30 = circa ROBOT_MOTOR_STEPS_PER_ENCODERTICK * ROBOT_MOTOR_STEPS_PER_ENCODERTICK
-	void ISRencoder()
-	{
-		if (robot.status.cmd.targetEncoderThicks > 0) //faccio lavorare l'ISR solo se targetEncoderThicks> 0
-		{
-			isrCurrCallmSec = millis();
-
-			if (isrCurrCallmSec > (isrLastCallmSec + ISR_MINMUM_INTERVAL_MSEC))
-			{
-				LEDTOP_B_ON
-					isrLastCallmSec = isrCurrCallmSec;
-				robot.status.sensors.EncR += 1;
-				if (robot.status.sensors.EncR > robot.status.cmd.targetEncoderThicks)
-				{
-					LEDTOP_G_ON
-						robot.stop();
-					//MOTORS_DISABLE
-					robot.status.cmd.targetEncoderThicks = 0;
-
-				}
-				LEDTOP_B_OFF
-			}
-
-		}
-
-	}
 
 
 
@@ -291,101 +484,212 @@
 		LEDTOP_B_OFF
 
 	}
+
+	void MSG2F(char * c, float f) {
+		#define CHARFLOATSIZE 7
+		#define CHARFLOATDECS 4
+		char charVal[CHARFLOATSIZE];  //temporarily holds data from vals
+		 //4 is mininum width, 3 is precision; float value is copied onto buff
+		dtostrf(f, CHARFLOATSIZE, CHARFLOATDECS, charVal);
+		SERIAL_MMI.print("1,");
+		SERIAL_MMI.print(c);
+		SERIAL_MMI.print(charVal);
+		SERIAL_MMI.println(F(";"));	
+	}
+
 // ////////////////////////////////////////////////////////////////////////////////////////////
 #pragma endregion
 
 
 
 
-
-
+// ########################################################################################
+// ########################################################################################
+//  TEST Functions
+// ########################################################################################
+// ########################################################################################
+	int scan[100];
 #pragma region Test Functions
-	void testMPU(int iterations = 5) {
-		int16_t ax, ay, az;
-		int16_t gx, gy, gz;
-
-		// read raw accel/gyro measurements from device
-		mpu.getMotion6(&ax, &ay, &az, &gx, &gy, &gz);
-
-		// these methods (and a few others) are also available
-		//accelgyro.getAcceleration(&ax, &ay, &az);
-		//accelgyro.getRotation(&gx, &gy, &gz);
-
-		// display tab-separated accel/gyro x/y/z values
-		MSG("Test Compass")
-		for (size_t i = 0; i < iterations; i++)
-		{
-			MSG2("ax:", ax);
-			MSG2("ay:", ay);
-			MSG2("az:", az);
-			MSG2("gx:", gx);
-			MSG2("gy:", gy);
-			MSG2("gz:", gz);
-
-
-			Serial.write((uint8_t)(ax >> 8)); Serial.write((uint8_t)(ax & 0xFF));
-			Serial.write((uint8_t)(ay >> 8)); Serial.write((uint8_t)(ay & 0xFF));
-			Serial.write((uint8_t)(az >> 8)); Serial.write((uint8_t)(az & 0xFF));
-			Serial.write((uint8_t)(gx >> 8)); Serial.write((uint8_t)(gx & 0xFF));
-			Serial.write((uint8_t)(gy >> 8)); Serial.write((uint8_t)(gy & 0xFF));
-			Serial.write((uint8_t)(gz >> 8)); Serial.write((uint8_t)(gz & 0xFF));
-
-		}
+	void testEncoders() {
+		float dx = 0.0;
+		float dth = 0.0;
+		readEncoders(&dx, &dth);
+		MSG2F("dx ", dx);
+		MSG2F("dth ", dth);
 
 	}
-	void testMPU2() {
-		MSG("TST MPU")
-			long tStart = millis();
-		while (millis() - tStart < 10000) {
-			if ((mpuIntStatus & 0x10) || fifoCount == 1024) {
-				// reset so we can continue cleanly
-				mpu.resetFIFO();
-				MSG("FIFO overflow!");
 
-				// otherwise, check for DMP data ready interrupt (this should happen frequently)
-			}
-			else if (mpuIntStatus & 0x02) {
-				// wait for correct available data length, should be a VERY short wait
-				while (fifoCount < packetSize) fifoCount = mpu.getFIFOCount();
-
-				// read a packet from FIFO
-				mpu.getFIFOBytes(fifoBuffer, packetSize);
-
-				// track FIFO count here in case there is > 1 packet available
-				// (this lets us immediately read more without waiting for an interrupt)
-				fifoCount -= packetSize;
-
-				mpu.dmpGetQuaternion(&q, fifoBuffer);
-				dtostrf(q.z, 4, 3, charVal);	//float to char array
-				MSG("MPU")
-					Serial1.print("1,quat ");
-				Serial1.print(q.w);
-				Serial1.print(",");
-				Serial1.print(q.x);
-				Serial1.print(",");
-				Serial1.print(q.y);
-				Serial1.print(",");
-				Serial1.print(q.z);
-				Serial1.println(";");
+	void testIRproxy() {
+		MSG("testing ixproxy...");
+		while (true)
+		{
+			robot.readAllSensors();
+			if (robot.status.sensors.irproxy.fw != robot.statusOld.sensors.irproxy.fw)
+			{
+				SERIAL_MSG.println(F("1,irproxy.fw changed;"));
+				TOGGLEPIN(Pin_LED_TOP_B);
 
 			}
+			else if (robot.status.sensors.irproxy.fwHL != robot.statusOld.sensors.irproxy.fwHL)
+			{
+				SERIAL_MSG.println(F("1,irproxy.fwHl changed;"));
+				TOGGLEPIN(Pin_LED_TOP_G);
 
-			robot.readBumpers();
-
+			}
 		}
 
 	}
-	void testLDS(int iterations= 5) {
-		MSG("Test Compass")
+	void testObstacle() {
+		SERIAL_MSG.print(F("1,testing robot.isObstacleFree()...;"));
+		bool val = false;
+		bool oldVal = false;
+		robot.status.cmd.commandDir = GOF;
+		while (val)
+		{
+			val = robot.isObstacleFree();
+			if (oldVal != val)
+			{
+				TOGGLEPIN(Pin_LED_TOP_B);
+				SERIAL_MSG.println("1,robot.isObstacleFree() changed;");
+				oldVal = val;
+			}
+		}
+
+	}
+	void testSpeech() {
+		MSG("1,test Speak;");
+		SERIAL_MMI.println(F("28,CIAO CIAO;"));
+
+	}
+	void testLaser() {
+	MSG("Laser ON OFF 5 secondi...");
+	LASER_ON
+	countDown(5);
+	LASER_OFF
+
+	}
+	#if OPT_MPU
+		void testMPU(int iterations = 5) {
+			int16_t ax, ay, az;
+			int16_t gx, gy, gz;
+
+			// read raw accel/gyro measurements from device
+			mpu.getMotion6(&ax, &ay, &az, &gx, &gy, &gz);
+
+			// these methods (and a few others) are also available
+			//accelgyro.getAcceleration(&ax, &ay, &az);
+			//accelgyro.getRotation(&gx, &gy, &gz);
+
+			// display tab-separated accel/gyro x/y/z values
+			MSG("Test Compass")
+			for (size_t i = 0; i < iterations; i++)
+			{
+				MSG2("ax:", ax);
+				MSG2("ay:", ay);
+				MSG2("az:", az);
+				MSG2("gx:", gx);
+				MSG2("gy:", gy);
+				MSG2("gz:", gz);
+
+
+				Serial.write((uint8_t)(ax >> 8)); Serial.write((uint8_t)(ax & 0xFF));
+				Serial.write((uint8_t)(ay >> 8)); Serial.write((uint8_t)(ay & 0xFF));
+				Serial.write((uint8_t)(az >> 8)); Serial.write((uint8_t)(az & 0xFF));
+				Serial.write((uint8_t)(gx >> 8)); Serial.write((uint8_t)(gx & 0xFF));
+				Serial.write((uint8_t)(gy >> 8)); Serial.write((uint8_t)(gy & 0xFF));
+				Serial.write((uint8_t)(gz >> 8)); Serial.write((uint8_t)(gz & 0xFF));
+
+			}
+
+		}
+		void testMPU2() {
+			MSG("TST MPU")
+				long tStart = millis();
+			while (millis() - tStart < 10000) {
+				if ((mpuIntStatus & 0x10) || fifoCount == 1024) {
+					// reset so we can continue cleanly
+					mpu.resetFIFO();
+					MSG("FIFO overflow!");
+
+					// otherwise, check for DMP data ready interrupt (this should happen frequently)
+				}
+				else if (mpuIntStatus & 0x02) {
+					// wait for correct available data length, should be a VERY short wait
+					while (fifoCount < packetSize) fifoCount = mpu.getFIFOCount();
+
+					// read a packet from FIFO
+					mpu.getFIFOBytes(fifoBuffer, packetSize);
+
+					// track FIFO count here in case there is > 1 packet available
+					// (this lets us immediately read more without waiting for an interrupt)
+					fifoCount -= packetSize;
+
+					mpu.dmpGetQuaternion(&q, fifoBuffer);
+					dtostrf(q.z, 4, 3, charVal);	//float to char array
+					MSG("MPU")
+						Serial1.print("1,quat ");
+					Serial1.print(q.w);
+					Serial1.print(",");
+					Serial1.print(q.x);
+					Serial1.print(",");
+					Serial1.print(q.y);
+					Serial1.print(",");
+					Serial1.print(q.z);
+					Serial1.println(";");
+
+				}
+
+				robot.readBumpers();
+
+			}
+
+		}
+	#endif
+	int i, measures = 0;
+ 
+	void testLDS(int iterations) { //verifica che funzioni LDS a prescinder dalllo stepper
 		for (size_t i = 0; i < iterations; i++)
 		{
-			MSG2("LDS cm: ", robot.getLDSDistanceCm());
-			delay(500);
+			MSG2("cm:",	robot.getLDSDistanceCm());
+		}
+	}
+	void testScanLDS(int scansioni= 1) {
+		MSG2("LDS loops ", scansioni);
+
+		for (size_t j = 0; j < scansioni; j++) {
+			i = 0;
+			//Attende che sia in home
+			while (!myLDSstepper.isHomePosition())	{delay(10);	}
+			LASER_ON;
+			LEDTOP_B_ON;
+			while (!myLDSstepper.isEndPosition()) 
+			{
+				scan[i++] = robot.getLDSDistanceCm();
+				delay(200);
+
+			}
+			LASER_OFF;
+			LEDTOP_B_OFF;
+			measures = i;
+			MSG2("# ", measures);			
+			//stampa le misure intanto che la scansione torna indietro
+			for (size_t k = 0; k < measures; k++)
+			{
+				MSG2("# ", k);
+				MSG2("LDS cm: ",scan[k] );
+
+			}
+
 		}
 
 	}
-	void testCompass(int iterations= 5) {
+	void testCompass(int iterations) {
+
+		//MSG("Compass calibration...")
+		//robot.compassCalibrate();
 		MSG("Test Compass")
+		Wire.begin();
+		compass.begin(2);
 		for (size_t i = 0; i < iterations; i++)
 		{
 			MSG2("   alfa: ", robot.readCompassDeg());
@@ -393,12 +697,10 @@
 		}
 
 	}
-
 	void testGPS() {
 		MSG("Test GPS")
 		
 }
-
 	void testGoScan() {
 		// test LDS
 		while (true) {
@@ -425,232 +727,51 @@
 		robot.rotateDeg(45);
 		MSG("END Testing robot.moveCm()");
 	}
-	void testGoHeading(int Heading= 3) {
+	void testMotorsGoHeading(int finalHeading= 3) {
 
-		MSG2("## goHeading :", Heading);
+		MSG("## goHeading 0:");
+		robot.stop();
+		robot.goHeading(0, 5);
+		delay(1000);
+
+		MSG("## goHeading 90:");
+		robot.stop();
+		robot.goHeading(90, 5);
+		delay(1000);
+
+		MSG("## goHeading 180:");
+		robot.stop();
+		robot.goHeading(180, 5);
+		delay(1000);
+
+		MSG("## goHeading 270:");
+		robot.stop();
+		robot.goHeading(270, 5);
+		delay(1000);
+		MSG2("## goHeading :", robot.readCompassDeg());
 		robot.stop();
 		//MOTORS_DISABLE
-		robot.goHeading(Heading, 5);
+		robot.goHeading(finalHeading, 5);
+		delay(5000);
 
 }
-#pragma endregion
-
-
-// ########################################################################################
-// ########################################################################################
-//  S E T U P
-// ########################################################################################
-// ########################################################################################
-void setupRobot()
-{
-	SERIAL_MSG.begin(SERIAL_MSG_BAUD_RATE);
-	SERIAL_MMI.begin(SERIAL_MMI_BAUD_RATE);
-	SERIAL_GPS.begin(SERIAL_GPS_BAUD_RATE);
-	pinMode(Pin_LED_TOP_G, OUTPUT);
-	ledSeq1();
-	//lampeggiaLed(Pin_LED_TOP_R, 3, 5);
-	//lampeggiaLed(Pin_LED_TOP_G, 3, 5);
-	//lampeggiaLed(Pin_LED_TOP_B, 3, 5);
-	LEDTOP_R_ON	// Indica inizio SETUP Phase
-	MOTORS_DISABLE
-	attachInterrupt(digitalPinToInterrupt(3), ISRencoder, CHANGE);
-
-	InitTimersSafe(); //initialize all timers except for 0, to save time keeping functions
-					  //sets the frequency for the specified pin
-					  //bool success = SetPinFrequencySafe(Pin_LED_TOP_R, 2);
-
-					  ////if the pin frequency was set successfully, turn pin 13 on
-					  //if (success) {
-					  //	digitalWrite(Pin_LED_TOP_B, HIGH);
-					  //	pwmWrite(Pin_LED_TOP_R, 128); //set 128 to obtain 50%duty cyle
-					  //	SetPinFrequency(Pin_LED_TOP_R, 2); //setting the frequency to 10 Hz
-					  //}
-
-	countDown(5);  //PER DARE IL TEMPO ALL COMPASS DI RISPONDERE
-	Wire.begin(); // default timeout 1000ms
-
-
-	#if OPT_MPU6050
-
-		setupMPU();
-	#endif
-
-	#if OPT_GPS
-		robot.initRobot(&Gps);
-	#endif
-	#if OPT_LDS
-		robot.initRobot(&LDS);
-		robot.initLDS(&LDS);
-	#endif
-	#if OPT_COMPASS
-		robot.initRobot(&compass);
-		robot.initCompass(&compass);//include compass.begin();
-	#endif
-	#if OPT_STEPPERLDS
-		robot.initRobot(&myLDSstepper);
-	#endif
-
-	#if OPT_SEROVOSONAR
-		robot.initRobot(&servoSonar);
-	#endif
-
-
-	robot.initRobot();
-
-	//	noTone(Pin_LED_TOP_R);
-
-
-}
-	
-void setup()
-{
-	setupRobot();
-	//	robot.compassCalibrate();
-
-	LEDTOP_R_ON
-	//robot.initHW(); //disabilita i motori
-					//	tone(Pin_LED_TOP_R, 2, 0);
-	MSG("####[  Test Robot In Out v1  ]####");
-	WEBCAM_OFF
-	WEBCAM_ON
-	MSG3("Bat : ", robot.readBattChargeLevel(), "%");
-
-	MSG2("A0 : ", analogRead(A0));
-	MSG2("A1 : ", analogRead(A1));
-	MSG2("A1 : ", analogRead(A2));
-
-
-
-	MSG("ACCENDI I MOTORI");
-	countDown(5);
-
-
-	// test di obstacleFree()		 
-	testMotors();
-
-	//testGoHeading(90);
-#if 0
-	//SERIAL_MSG.println(F("1,running IBIT...;"));
-	//robot.runIBIT(300);
-
-
-	// posiziona il servo al centro
-			MSG("Posiziono Servo al centro...")
-				//servoSonar.attach(Pin_ServoSonarPWM);
-				robot.ServoAtPos(10); delay(1000);
-			robot.ServoAtPos(90); delay(1000);
-			robot.ServoAtPos(160); delay(1000);
-
-
-#endif // 0
-
-	// ########################################################################################
-	// ########################################################################################
-	//  TEST OPZIONALI
-	// ########################################################################################
-	// ########################################################################################
-	#if 0
-	#pragma region TEST OPZIONALI PRIMA DELL'AVVIO DELL'OS
-	#define TEST_SONAR 1
-	#if TEST_SONAR
-		MSG("SONAR ONLY TEST..");
-		for (size_t i = 0; i < 5; i++)
-		//		while (true)
-		{
-			TOGGLEPIN(Pin_LaserOn)
-				MSG3("Ping: ", robot.getLDSDistanceCm(), "cm");
-			//MSG3("Ping: ",sonar.ping_cm(),"cm");
-			delay(300);
-		}
-	#endif
-
-
-	#define TEST_LDS 1
-
-	#if TEST_LDS
-		MSG("LDS init...");
-		//Wire.begin();
-
-		bool initDone = false;
-		while (!initDone)
-		{
-			if (LDS.init())
-			{
-				MSG("LDS..OK;");
-				initDone = true;
-			}
-			else
-			{
-				MSG("LDS..FAIL;");
-				delay(300);
-			}
-
-		}
-		delay(2000);
-		LDS.setTimeout(500);
-
-		#if defined LONG_RANGE
-			// lower the return signal rate limit (default is 0.25 MCPS)
-			LDS.setSignalRateLimit(0.1);
-			// increase laser pulse periods (defaults are 14 and 10 PCLKs)
-			LDS.setVcselPulsePeriod(VL53L0X::VcselPeriodPreRange, 18);
-			LDS.setVcselPulsePeriod(VL53L0X::VcselPeriodFinalRange, 14);
-		#endif
-		#if defined HIGH_SPEED
-			// reduce timing budget to 20 ms (default is about 33 ms)
-			LDS.setMeasurementTimingBudget(20000);
-		#elif defined HIGH_ACCURACY
-			// increase timing budget to 200 ms
-			LDS.setMeasurementTimingBudget(200000);
-		#endif
-
-		//Eseguo le misure di prova------------------------------
-		uint16_t d = 0;
-
-		for (size_t i = 0; i < 5; i++)
-		{
-			LASER_ON
-			d = LDS.readRangeSingleMillimeters();	//robot.getLDSDistanceCm()
-			if (!LDS.timeoutOccurred()) {
-				MSG3("LDS :", d, "mm");
-			}
-			else
-			{
-				MSG("LDS TIMEOUT ");
-				Wire.begin();
-				LDS.init();
-
-			}
-			LASER_OFF
-
-			delay(500);
-		}
-			//---------------------------------------------------------
-
-//		MSG("LDS  TEST END");
-
-		#endif
-
-
-	#pragma region test go()
-		MSG("rotateUntilMinFreeDist..")
-		robot.status.sensors.sonarEchos[90] = robot.goCWUntilMinFreeDist(200);
-		MSG2("dist found cm:", robot.status.sensors.sonarEchos[90]);
-	#if 0
+	void testMotorsCmdVel() {
 		// RUOTA con velocità crescente 1 secondo ogni step
 		// Attenzione !! Se presente un altro tone() non funziona
 		robot.stop();
 		MSG("TEST robot.go()..")
-			MSG("PLEASE SWITCH MOTORS ON")
-			MSG("DISCONNECT CABLES")
-			MSG("Start test in 10 secondi...")
-			countDown(10);
+		MSG("PLEASE SWITCH MOTORS ON")
+		MSG("DISCONNECT CABLES")
+		MSG("Start test in 3 secondi...")
+		countDown(3);
+
+/*
 		int ck = ROBOT_MOTOR_CLOCK_microsecondMAX;
 		bool cont = true;
 		while (cont)
 		{
-			MSG2("Current ck:", ck)
-				robot.go(commandDir_e::GOR, ck);
+			MSG2("mot. ck:", ck)
+			robot.go(commandDir_e::GOR, ck);
 			delay(1000);
 			ck -= 200;
 			if (ck < ROBOT_MOTOR_CLOCK_microsecondMIN)
@@ -662,18 +783,40 @@ void setup()
 				cont = false;
 			}
 		}
+*/
+		// limiti velocità lineare
+		// Vmin = Hzmin/CMDVEL_LINEAR_TO_MOTORHZ = 166.7/2000 = 0.083 m/s
+		// Vmax =HzMax/CMDVEL_LINEAR_TO_MOTORHZ =  400 /2000 = 0.2 m/s
+		// Vang_min =Hzmin/CMDVEL_ANGULAR_TO_MOTORHZ  =  166.7  /341,992 =0.487 rad/sec
+		// Vang_Max =HzMax/CMDVEL_ANGULAR_TO_MOTORHZ  =   400 /341,992 =1.17 rad/sec
+
+		#define T1 2000		// forward time
+		#define V1 0.1		// limear speed
+
+		#define T2 4000		// rotation time msec
+		#define V2  PI/8	// angular speed rad/s
+
+		double motTime = 0;
+
+		//rotaz 360°
+		robot.goCmdVel(0, V2);delay(T2*4); testEncoders();
+		delay(2000);
+		robot.goCmdVel(V1, 0); delay(T1); testEncoders();
+		robot.goCmdVel(0, V2);delay(T2); testEncoders();
+		robot.goCmdVel(V1/2, 0);delay(T1); testEncoders();
+		robot.goCmdVel(0, V2);delay(T2); testEncoders();
+		robot.goCmdVel(V1, 0);delay(T1); testEncoders();
+		robot.goCmdVel(0, V2);delay(T2); testEncoders();
+		robot.goCmdVel(V1/2, 0);delay(T1); testEncoders();
+		robot.goCmdVel(0, V2);delay(T2); testEncoders();
 
 		MSG("Fine test......")
 			robot.stop();
-		//while (true) {}
 
-	#endif // 0
-
-	#pragma endregion
-
-
-	#pragma region I2C Scanner
-	#if 0
+	}
+	void I2Cscanner() {
+		// I2C Scanner	 
+		#if 0		
 
 
 		byte error, address;
@@ -715,314 +858,11 @@ void setup()
 
 		delay(5000);           // wait 5 seconds for next scan
 
-	#endif // 0
-	#pragma endregion
+		#endif 
 
-	#define TEST_GPS 0
-	#if TEST_GPS
-	//CHIAVARI LAT	44.326953 LONG 9.289679
+}
 
-	#endif // TEST_SPEECH
-
-	#define TEST_SPEECH 0
-	#if TEST_SPEECH
-		SERIAL_MSG.println(F("1,test Speak;"));
-		SERIAL_MMI.println(F("28,CIAO CIAO;"));
-
-	#endif // TEST_SPEECH
-
-	#define TEST_IRPROXY 0
-	#if TEST_IRPROXY	//test ixproxy
-		SERIAL_MSG.print(F("1,testing ixproxy...;"));
-		while (true)
-		{
-			robot.readSensors();
-			if (robot.status.sensors.irproxy.fw != robot.statusOld.sensors.irproxy.fw)
-			{
-				SERIAL_MSG.println(F("1,irproxy.fw changed;"));
-				TOGGLEPIN(Pin_LED_TOP_B);
-
-			}
-			else if (robot.status.sensors.irproxy.fwHL != robot.statusOld.sensors.irproxy.fwHL)
-			{
-				SERIAL_MSG.println(F("1,irproxy.fwHl changed;"));
-				TOGGLEPIN(Pin_LED_TOP_G);
-
-			}
-		}
-
-	#endif // 0//test ixproxy
-
-	#define TEST_OBST 0
-	#if TEST_OBST		// test di obstacleFree()
-		SERIAL_MSG.print(F("1,testing robot.isObstacleFree()...;"));
-		bool val = false;
-		bool oldVal = false;
-		robot.status.cmd.commandDir = GOF;
-		while (val)
-		{
-			val = robot.obstacleFree();
-			if (oldVal != val)
-			{
-				TOGGLEPIN(Pin_LED_TOP_B);
-				SERIAL_MSG.println("1,robot.isObstacleFree() changed;");
-				oldVal = val;
-			}
-		}
-	#endif // 1
-
-	#define TEST_MOTION 0
-	#if TEST_MOTION		// test di obstacleFree()
-
-
-
-		attachInterrupt(digitalPinToInterrupt(Pin_EncRa), ISRencoder, LOW);
-		interrupts();
-
-		while (true)
-		{
-			MSG2("stp:", robot.status.cmd.stepsDone);
-
-			delay(1000);
-		}
-
-		MSG("MOTION TEST");
-		countDown(5);  //PER DARE IL TEMPO ALL COMPASS DI RISPONDERE
-
-		MSG("MOVE FW 5cm");
-		robot.moveCm(10);
-		MSG("MOVE BK 5cm");
-		robot.moveCm(-10);
-
-
-
-
-		MSG("Testing robot.moveCm()...Attiva motori");
-		countDown(8);
-		robot.moveCm(10);
-		robot.moveCm(-10);
-		robot.rotateDeg(10);
-		robot.rotateDeg(-20);
-		robot.rotateDeg(10);
-		MSG("END Testing robot.moveCm()");
-
-		//SERIAL_MSG.print("testing robot.moveCm()...");
-		//int cmFatti = 0;
-		//#define DIST 30
-		//while (!Serial.available())
-		//{
-		//	cmFatti = robot.moveCm(DIST);
-		//	if (cmFatti <= DIST)
-		//	{
-		//		TOGGLEPIN(Pin_LED_TOP_R);
-		//		SERIAL_MSG.print("OSTACOLO DOPO CM:"); SERIAL_MSG.println(cmFatti);
-		//		robot.moveCm(-cmFatti);
-		//	}
-		//	else
-		//	{
-		//		TOGGLEPIN(Pin_LED_TOP_G);
-
-		//	}
-		//}
-	#endif // 1
-
-
-
-	#define TEST_COMPASS 1
-	#if TEST_COMPASS		//TEST_COMPASS  
-		robot.readSensorsHR(); // legge sensori
-		MSG("TEST_COMPASS. Accendere i motori...");
-		// Initialise the sensor 
-
-		robot.stop();
-		compass.begin(2);
-		int DestAngle = 0; // nord
-		int currAngle = 0;
-		int error = 0;
-
-		//misuro
-		currAngle = compass.getBearing();
-		error = currAngle - DestAngle;
-
-		MSG("Ora punto a nord SENZA CALIBRAZIONE...")
-			robot.rotateDeg(-error);
-
-		currAngle = compass.getBearing();
-		MSG2(" Heading FINALE SENZA CALIBRAZIONE: ", currAngle);
-		countDown(3);
-
-	#pragma region Calibrazione compass
-	#define CALIBRATE_COMPASS 1
-	#if CALIBRATE_COMPASS
-
-		MSG("Ora CALIBRO...")
-
-		//metto in moto 
-		MSG("In moto..");
-		robot.compassCalibrate();
-
-	#endif // 0
-	#pragma endregion
-
-		// al termine della calibrazione faccio puntare il robot ai 4 punti cardinali
-		MSG("Ora punto a nord DOPO CALIBRAZIONE ...")
-			countDown(15);
-		currAngle = compass.getBearing();
-		MSG3("Bearing di partenza: DOPO CALIBRAZIONE ", currAngle, "°");
-		error = currAngle - DestAngle;
-	#if 0  // non va se gli IR sono accecati dalla luce
-		robot.rotateDeg(-error);
-	#else
-		while (true)
-		{
-			//misuro
-			int currAngle = compass.getBearing();
-			MSG2("current Bearing: ", currAngle);
-
-			// calcolo l'errore----------------------
-			int error = currAngle - DestAngle;
-			if (abs(error) < 10)
-			{
-				robot.stop();
-				break;
-			}
-			else
-			{
-
-				if (error < 180)
-				{
-					// sotto mezzo giro l'errore lo considero >0
-				}
-				else
-				{
-					// oltre mezzo giro 
-					error = DestAngle + 360 - currAngle;
-				}
-				MSG2("Error  ", error);
-
-				// regolo
-				if (error > 0)
-				{
-					robot.go(commandDir_e::GOR, (motCk_t)robotSpeed_e::SLOW);
-				}
-				else if (error < 0)
-				{
-					robot.go(commandDir_e::GOL, (motCk_t)robotSpeed_e::SLOW);
-				}
-
-
-
-			}
-		}
-
-	#endif // 0
-
-		//robot.stop();
-		MSG("**********Arrivato********");
-		MSG3("Bearing di arrivo: ", compass.getBearing(), "°");
-
-		while (true) {
-			TOGGLEPIN(Pin_LED_TOP_G);
-			delay(300);
-		}
-	#endif // COMPASS
-
-
-
-	// TEST LDS,COMPASS,SONAR.. INTANTO CHE GIRA
-	#if 1
-
-		MSG("TEST LDS,COMPASS,SONAR..");
-		MSG("PLEASE SWITCH MOTORS ON");
-		MSG("DISCONNECT CABLES");
-		MSG("Start test in 10 secondi...");
-		countDown(5);
-		LASER_ON
-
-		//1)inizializzo i sensori e le variabili
-		int pingCm = 0;
-		int ldsmm = 0;
-		int estimatedDistCm = 0;
-		MSG("COMPASS init");
-		Wire.begin();
-		compass.begin(2);
-
-		initDone = true;
-		while (!initDone)
-		{
-			MSG("LDS init...");
-			if (LDS.init())
-			{
-				MSG("LDS OK;");
-				initDone = true;
-			}
-			else
-			{
-				MSG("LDS   ..FAIL;");
-				delay(500);
-			}
-
-		}
-		delay(1000);
-//		LDS.setTimeout(500);
-
-
-		MSG("MOVE FW 5cm");
-		robot.moveCm(5);
-		MSG("MOVE BK 5cm");
-		robot.moveCm(-5);
-		//MSG("Target 180");
-		//delay(1000);
-		//robot.rotateHeading(180, 5);
-		//MSG("Target 90");
-		//delay(1000);
-		//robot.rotateHeading(90, 5);
-		//delay(1000);
-		//MSG("Target 270");
-		//robot.rotateHeading(270, 5);
-		//delay(1000);
-		//MSG("Target 0");
-		//robot.rotateHeading(270, 5);
-		//MSG("Target 180");
-
-
-
-
-
-
-
-	#endif // TEST_ALL
-
-
-	#pragma endregion //regione dei test
-
-	#endif // 0
-
-
-	// ########################################################################################
-	// ########################################################################################
-	//  TEST OPZIONALI
-	// ########################################################################################
-	// ########################################################################################
-
-	#pragma region TEST OPZIONALI PRIMA DELL'AVVIO DELL'OS
-
-
-
-
-		#if 0
-			while (true) {
-				MSG2("Angle with max FreeDist: ", robot.goCWAndScanDeg(360));
-				delay(2000);
-				MSG2("Angle with max FreeDist: ", robot.goCWAndScanDeg(-360));
-				delay(2000);
-
-			}
-
-		#endif // 1
-
-
-			// test ESPLORA
+	void testEsplora(){
 		#if 0
 			int backDist = 10; // quanto va indietro quando trova ostacolo
 			int movedmm = 0;
@@ -1115,297 +955,175 @@ void setup()
 
 			}
 		#endif // 1
+	}
 
-
-		//TEST_COMPASS_3   ### BLOCCANTE ###
-		#if 0		//calibra  e poi ruota verso Nord
-			// Initialise the sensor 
-			robot.stop();
-			robot.status.sensors.EncR = 0;
-
-
-			MSG("Test GO 1 giro....")
-			//robot.goCWAndScan(20);
-			long targetRads = 2 * PI; //target in radianti
-			robot.status.cmd.targetEncoderThicks = targetRads *  ROBOT_MOTOR_STEPS_PER_RADIANT / ROBOT_MOTOR_STEPS_PER_ENCODERTICK;
-			MSG2("Target Enc.", robot.status.cmd.targetEncoderThicks);
-
-			robot.go(commandDir_e::GOR, robotSpeed_e::MEDIUM);
-			countDown(5);
-
-			while (true)
-			{
-				MSG2("Enc R.", robot.status.sensors.EncR);
-				MSG2("LDS.", robot.getLDSDistanceCm());
-				delay(1000);
-
-			}
-
-			/*
-			long targetRads = 2 * PI; //un giro
-			robot.status.cmd.targetEncoderThicks = targetRads *  ROBOT_MOTOR_STEPS_PER_RADIANT /  ROBOT_MOTOR_STEPS_PER_ENCODERTICK;
-			MSG2("Target Enc.", targetEncoderTicks);
-
-			// per il tempo a disposizione...
-			while (robot.status.sensors.EncR < targetEncoderTicks) //tempo sufficiente per fare almeno un giro
-			{
-			// rilevo distanza e angolo
-			MSG2("Enc R.", robot.status.sensors.EncR);
-			delay(500);
-			}
-
-			robot.stop();
-
-			MSG("..End Scan");
-			*/
-		#endif // COMPASS
-
-
-
-		//TEST_COMPASS_2   ### BLOCCANTE ###
-		#if 0		//calibra  e poi ruota verso Nord
-			// Initialise the sensor 
-			robot.stop();
-			MSG("CALIBRAZIONE COMPASS. Accendere i motori......")
-				countDown(5);
-			robot.compassCalibrate();
-
-			// al termine della calibrazione faccio puntare il robot ai 4 punti cardinali
-			MSG("Ora punto a nord DOPO CALIBRAZIONE ...")
-				robot.goHeading(0, 3);
-			MSG("**********Arrivato********");
-			MSG3("Bearing di arrivo: ", compass.getBearing(), "°");
-
-			while (true) {
-				TOGGLEPIN(Pin_LED_TOP_G);
-				delay(300);
-			}
-		#endif // COMPASS
-
-		// TEST SONAR
-		#if 0	
-			MSG("SONAR ONLY TEST..");
-			for (size_t i = 0; i < 5; i++)		//		while (true)
-			{
-				TOGGLEPIN(Pin_LaserOn);
-				MSG3("Ping: ", robot.sonarPing(), "cm");
-				delay(300);
-			}
-		#endif // 0
-
-		// ruota finchè non trova davanti una distanza minima libera
-		#if 0 		
-			MSG("goCWUntilMinFreeDist..")
-				robot.status.sensors.sonarEchos[90] = robot.goCWUntilMinFreeDist(200);
-			MSG2("dist found cm:", robot.status.sensors.sonarEchos[90]);
-		#endif
-
-		// RUOTA con velocità crescente 1 secondo ogni step
-		#if 0
-
-			// Attenzione !! Se presente un altro tone() non funziona
-			robot.stop();
-			MSG("TEST robot.go()..")
-			MSG("PLEASE SWITCH MOTORS ON")
-			MSG("DISCONNECT CABLES")
-			MSG("Start test in 10 secondi...")
-			countDown(10);
-			int ck = ROBOT_MOTOR_CLOCK_microsecondMAX;
-			bool cont = true;
-			while (robot.isObstacleFreeBumpers())
-			{
-				MSG2("Current ck:", ck)
-					robot.go(commandDir_e::GOR, ck);
-				delay(1000);
-				ck -= 200;
-				if (ck < ROBOT_MOTOR_CLOCK_microsecondMIN)
-				{
-					//torno indietro per 3 secondi a velocità media
-					robot.stop();
-					robot.go(commandDir_e::GOL, robotSpeed_e::MEDIUM);
-					delay(3000);
-					cont = false;
-				}
-				robot.readBumpers();
-			}
-
-			MSG("Fine test......");
-			robot.stop();
-			//while (true) {}
-
-		#endif // 0
-
-
-		// I2C Scanner	 
-		#if 0		
-
-
-			byte error, address;
-			int nDevices;
-
-			Serial.println("Scanning...");
-
-			nDevices = 0;
-			for (address = 1; address < 127; address++)
-			{
-				// The i2c_scanner uses the return value of
-				// the Write.endTransmisstion to see if
-				// a device did acknowledge to the address.
-				error = I2c.write(address, 0);
-
-
-				if (error == 0)
-				{
-					Serial.print("I2C device found at address 0x");
-					if (address < 16)
-						Serial.print("0");
-					Serial.print(address, HEX);
-					Serial.println("  !");
-
-					nDevices++;
-				}
-				else if (error == 4)
-				{
-					Serial.print("Unknow error at address 0x");
-					if (address < 16)
-						Serial.print("0");
-					Serial.println(address, HEX);
-				}
-			}
-			if (nDevices == 0)
-				Serial.println("No I2C devices found\n");
-			else
-				Serial.println("done\n");
-
-			delay(5000);           // wait 5 seconds for next scan
-
-		#endif 
-
-		// TEST_GPS 
-		#if 0
-								   //CHIAVARI LAT	44.326953 LONG 9.289679
-
-		#endif 
-
-
-		// TEST_SPEECH
-		#if 0		 
-			SERIAL_MSG.println(F("1,test Speak;"));
-			SERIAL_MMI.println(F("28,CIAO CIAO;"));
-		#endif // TEST_SPEECH
-
-
-		//test ixproxy
-		#if 0	
-			SERIAL_MSG.print(F("1,testing ixproxy...;"));
-			while (true)
-			{
-				robot.readSensors();
-				if (robot.status.sensors.irproxy.fw != robot.statusOld.sensors.irproxy.fw)
-				{
-					SERIAL_MSG.println(F("1,irproxy.fw changed;"));
-					TOGGLEPIN(Pin_LED_TOP_B);
-
-				}
-				else if (robot.status.sensors.irproxy.fwHL != robot.statusOld.sensors.irproxy.fwHL)
-				{
-					SERIAL_MSG.println(F("1,irproxy.fwHl changed;"));
-					TOGGLEPIN(Pin_LED_TOP_G);
-
-				}
-			}
-
-		#endif // 0//test ixproxy
-
-
-
-
-		// TEST_COMPASS_1 SENZA CALIBRAZIONE 			
-		#if 0		///Ruota misurando in continuazione
-			MSG("Ora punto a nord SENZA CALIBRAZIONE...")
-				robot.goHeading(3);
-		#endif // 1
-
-
-
-
-		// RUOTA E MISURA LDS,COMPASS,SONAR.. 
-		#if 0  
-
-			MSG("TEST LDS,COMPASS,SONAR..");
-			MSG("ACCENDI MOTORI E SCOLLEGA CAVI");
-
-			countDown(5);
-			LASER_ON
-
-				//1)inizializzo i sensori e le variabili
-				int pingCm = 0;
-			int ldsmm = 0;
-			int estimatedDistCm = 0;
-
-			//MSG("Target 180");
-			//delay(1000);
-			//robot.rotateHeading(180, 5);
-			//MSG("Target 90");
-			//delay(1000);
-			//robot.rotateHeading(90, 5);
-			//delay(1000);
-			//MSG("Target 270");
-			//robot.rotateHeading(270, 5);
-			//delay(1000);
-			//MSG("Target 0");
-			//robot.rotateHeading(270, 5);
-			//MSG("Target 180");
-
-
-		#endif // TEST_ALL
-
+	void testServo() {
 		//PROVA SERVO----------------------------------
 		#if 0	
-
 			MSG("Servo al centro...")
-				//servoSonar.attach(Pin_ServoSonarPWM);
-				robot.ServoAtPos(10); delay(1000);
+			//servoSonar.attach(Pin_ServoSonarPWM);
+			robot.ServoAtPos(10); delay(1000);
 			robot.ServoAtPos(160); delay(1000);
 			robot.ServoAtPos(90); delay(1000);
-
-
 		#endif // 0
+	}
+	void testGoTargetEncoderTicks() {  // rotazione non bloccante con uso di targetEncoderThicks
+		robot.stop();
+		robot.status.sensors.encR = 0;
+		MSG("Test GO 1 giro....")
+		long targetRads = 2 * PI; //target in radianti
+		robot.status.cmd.targetEncoderThicks = targetRads *  ROBOT_MOTOR_STEPS_PER_RADIANT / ROBOT_MOTOR_STEPS_PER_ENCODERTICK;
+		MSG2("Target Enc.", robot.status.cmd.targetEncoderThicks);
 
-	#pragma endregion //regione dei test
+		robot.go(commandDir_e::GOR, robotSpeed_e::MEDIUM);
+		countDown(5);
+
+		while (true)
+		{
+			MSG2("Enc R.", robot.status.sensors.encR);
+			MSG2("LDS.", robot.getLDSDistanceCm());
+			delay(1000);
+
+		}
+
+	}
+
+#pragma endregion
 
 
-	LEDTOP_R_OFF
+// ########################################################################################
+// ########################################################################################
+//  S E T U P
+// ########################################################################################
+// ########################################################################################
+void setupRobot()
+{
+	//lampeggiaLed(Pin_LED_TOP_R, 3, 5);
+	//lampeggiaLed(Pin_LED_TOP_G, 3, 5);
+	//lampeggiaLed(Pin_LED_TOP_B, 3, 5);
+	LEDTOP_R_ON	// Indica inizio SETUP Phase
+	MOTORS_DISABLE
 
- }
+	InitTimersSafe(); //initialize all timers except for 0, to save time keeping functions
+					  //sets the frequency for the specified pin
+					  //bool success = SetPinFrequencySafe(Pin_LED_TOP_R, 2);
+
+	////if the pin frequency was set successfully, turn pin 13 on
+	//if (success) {
+	//	digitalWrite(Pin_LED_TOP_B, HIGH);
+	//	pwmWrite(Pin_LED_TOP_R, 128); //set 128 to obtain 50%duty cyle
+	//	SetPinFrequency(Pin_LED_TOP_R, 2); //setting the frequency to 10 Hz
+	//}
+
+	delay(5000);  //PER DARE IL TEMPO ALL COMPASS DI RISPONDERE 5 ok
+	Wire.begin(); // default timeout 1000ms
+
+	#if OPT_ENCODERS
+
+		setupEncoders();
+	#endif
+
+	#if OPT_MPU6050
+
+		setupMPU();
+	#endif
+
+	#if OPT_GPS
+		robot.initRobot(&Gps);
+	#endif
+	#if OPT_LDS
+		robot.initRobot(&LDS);
+		//setupLDS(); 	//robot.initLDS(&LDS);
+	#endif
+	#if OPT_COMPASS
+		robot.initRobot(&compass);
+		robot.initCompass(&compass);//include compass.begin();
+		//	robot.compassCalibrate();
+
+	#endif
+	#if OPT_STEPPERLDS
+		robot.initRobot(&myLDSstepper);
+		setupStepperLDS(); //avvia lo stepper
+	#endif
+
+	#if OPT_SEROVOSONAR
+		robot.initRobot(&servoSonar);
+	#endif
 
 
+	robot.initRobot(); //inizializza solo le variabili
+
+	//	noTone(Pin_LED_TOP_R);
+
+}
+	
+void setup()
+{
+	LEDTOP_ALL_OFF;
+
+	SERIAL_MSG.begin(SERIAL_MSG_BAUD_RATE);
+	SERIAL_MMI.begin(SERIAL_MMI_BAUD_RATE);
+	SERIAL_GPS.begin(SERIAL_GPS_BAUD_RATE);
+ 
+	MSG("===Test Robot In Out===")
+ 
+	setupRobot();
+
+	LEDTOP_ALL_OFF;
+	LEDTOP_B_ON
+	//robot.initHW(); //disabilita i motori
+					//	tone(Pin_LED_TOP_R, 2, 0);
+	//MSG("ACCENDI I MOTORI")
+	//countDown(5);
+
+	WEBCAM_OFF
+	WEBCAM_ON
+
+	LEDTOP_B_OFF
+  }
+
+int loopCounter = 1;
 void loop() {
-	MSG("Start Test Seqence....");
+	MSG("====================")
+	MSG2("Start Test Seq. #", loopCounter++);
+	ledSeq1();
 
-	lampeggiaLed(Pin_LED_TOP_G, 5, 10);
-	LEDTOP_G_ON;
+ 
 	// wait to enter print region
 	//chMtxLock(&mutexSerialMMI);
  
-	onCmdGetSensorsHRate(&cmdMMI);
-	onCmdGetSensorsLRate(&cmdMMI);
- 
   
-	MSG3("Bat : ", robot.readBattChargeLevel(), "%");
+  
+	//MSG3("Bat : ", robot.readBattChargeLevel(), "%");
 
-	MSG2("A0 : ", analogRead(A0));
-	MSG2("A1 : ", analogRead(A1));
-	MSG2("A1 : ", analogRead(A2));
+	//MSG2("A0 : ", analogRead(A0));
+	//MSG2("A1 : ", analogRead(A1));
+	//MSG2("A2 : ", analogRead(A2));
+	//testMotorsGoHeading(3);
+
+
+	while (true)
+	{
+		testMotorsCmdVel();
+		//testEncoders();
+		delay(2000);
+	}
+	testLDS(20);
+	testScanLDS(10);
+
 
 	//testMPU2();
-	testMPU(60);
-
-	testLDS(10);
+	#if OPT_MPU
+		testMPU(60);
+	#endif // OPT_MPU
 
 
 	testCompass(10);
+	//testIRproxy();
+
 	//testGPS();
+	MSG("======== end ========")
+	delay(5000);
 }
 
 
