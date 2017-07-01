@@ -1083,17 +1083,19 @@ void thdSetup() {
 void setup_robot() {
 	LEDTOP_R_ON	// Indica inizio SETUP Phase
 
-
-	robot.initHW(); //disabilita i motori
-	MSG("ROBOTCORE v0.2");
-	WEBCAM_OFF
-	WEBCAM_ON
-	MSG3("Bat : ",robot.readBattChargeLevel(),"%");
-
-	tone(Pin_LED_TOP_R, 2, 0);
 	Wire.begin(); // default timeout 1000ms
-	robot.initRobot();
-	noTone(Pin_LED_TOP_R);
+	robot.initRobot(); //include initHW
+
+	//robot.initHW(); //disabilita i motori
+	LEDTOP_R_OFF	// Indica inizio SETUP Phase
+
+	MSG("TESTROSCHIBIOS v0.2");
+	//WEBCAM_OFF
+	//WEBCAM_ON
+	MSG3("Bat : ",analogRead(Pin_AnaVbat),"/1024");
+
+	//tone(Pin_LED_TOP_R, 2, 3);
+	//noTone(Pin_LED_TOP_R);
 	LEDTOP_G_ON	// Indica inizio SETUP Phase
 
 

@@ -24,9 +24,7 @@
 
 	//#include <NewTone\NewTone.h>
 
-	#define SERIAL_DBG	Serial
-	#define SERIAL_DBG_BAUD_RATE 115200
-
+ 
 #pragma endregion
 
 // ////////////////////////////////////////////////////////////////////////////////////////////
@@ -699,16 +697,15 @@
 
 
 	void setupRobot() {
+		SERIAL_ROS.begin(SERIAL_ROS_BAUD_RATE);
+		SERIAL_MMI.begin(SERIAL_MMI_BAUD_RATE);
+		SERIAL_GPS.begin(SERIAL_GPS_BAUD_RATE);
 		ledSeq1();
 
 		robot.initHW(); //disabilita i motori
-		SERIAL_MSG.begin(SERIAL_MSG_BAUD_RATE);
-		SERIAL_MMI.begin(SERIAL_MMI_BAUD_RATE);
-		SERIAL_GPS.begin(SERIAL_GPS_BAUD_RATE);
-		MSG("ROBOTCORE v0.2");
+		MSG("TESTROSLASERSCAN v0.1");
 
-		WEBCAM_ON
-		MSG3("Bat : ", robot.readBattChargeLevel(), "%");
+		MSG3("A0 (Vbat) : ", analogRead(A0), "/1024");
 		tone(Pin_LED_TOP_R, 2, 0);
 		countDown(5);  //PER DARE IL TEMPO ALL COMPASS DI RISPONDERE
 		Wire.begin(); // default timeout 1000ms
@@ -727,7 +724,6 @@
 
 		pinMode(PIN_STEPPERLDS_HOME, INPUT_PULLUP);// open >+5 closed =gnd
 		pinMode(PIN_STEPPERLDS_END, INPUT_PULLUP);// open >+5 closed =gnd
-		SERIAL_DBG.begin(SERIAL_DBG_BAUD_RATE);
 		attachPinChangeInterrupt(PIN_STEPPERLDS_HOME, ISRstepperSwitchHome, CHANGE);  // add more attachInterrupt code as required
 		attachPinChangeInterrupt(PIN_STEPPERLDS_END, ISRstepperSwitchEnd, CHANGE);  // add more attachInterrupt code as required
 		
