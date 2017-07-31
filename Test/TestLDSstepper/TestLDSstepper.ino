@@ -7,122 +7,281 @@
 #pragma region CONFIGURAZIONE DEL SISTEMA   
 //#define delay(ms) chThdSleepMilliseconds(ms) 
 #include "math.h"
-#include <MyRobotLibs\dbg.h>
+#include <MyRobotLibs\dbgCore.h>
 #include <MyRobotLibs\systemConfig.h>
 #include <MyRobotLibs\hw_config.h>
-#include <PinChangeInt\PinChangeInt.h>	//https://github.com/NicoHood/PinChangeInterrupt
+#include <digitalWriteFast.h>
+
+
+
 
 
 #pragma endregion
 
-#include <digitalWriteFast.h>
-#include <MyRobotLibs/robot.h>
-//struct robot_c robot;	//was  struct robot_c robot;
 
+
+
+
+
+
+
+
+#if OPT_LDS
+	#include <Wire.h>
+	#include <VL53L0X\VL53L0X.h>
+	VL53L0X LDS;
+	#define LONG_RANGE
+	// Uncomment ONE of these two lines to get
+	// - higher speed at the cost of lower accuracy OR
+	// - higher accuracy at the cost of lower speed
+
+	//#define HIGH_SPEED
+	//#define HIGH_ACCURACY
+
+
+	bool setup_LDS() {
+		Wire.begin();
+
+		byte failCount = 0;
+		bool initDone = false;
+		while (!initDone && (failCount < 10))
+		{
+			MSG("LDS init...");
+			if (LDS.init())
+			{
+				MSG("LDS OK;");
+				LDS.setTimeout(500);
+				initDone = true;
+				return initDone;
+			}
+			else
+			{
+				MSG("LDS   ..FAIL;");
+				delay(500);
+				failCount++;
+			}
+
+		}
+
+		#if defined LONG_RANGE
+				MSG("LDS Long range");
+				// lower the return signal rate limit (default is 0.25 MCPS)
+				LDS.setSignalRateLimit(0.1);
+				// increase laser pulse periods (defaults are 14 and 10 PCLKs)
+				LDS.setVcselPulsePeriod(VL53L0X::VcselPeriodPreRange, 18);
+				LDS.setVcselPulsePeriod(VL53L0X::VcselPeriodFinalRange, 14);
+		#endif
+
+		#if defined HIGH_SPEED
+				// reduce timing budget to 20 ms (default is about 33 ms)
+				distanceSensor.setMeasurementTimingBudget(20000);
+		#elif defined HIGH_ACCURACY
+				MSG("LDS High Accuracy");
+				// increase timing budget to 200 ms
+				distanceSensor.setMeasurementTimingBudget(200000);
+		#endif
+
+
+
+
+
+
+
+
+
+
+
+
+
+		LDS.startContinuous(100);
+		return initDone;
+	}
+
+#endif // OPT_LDS
+
+
+
+#if OPT_STEPPERLDS
+	#include <Timer5/Timer5.h>
+	#include <PinChangeInt\PinChangeInt.h>	//https://github.com/NicoHood/PinChangeInterrupt
+	#include <MyStepper\myStepper.h>
+	myStepper_c myLDSstepper( PIN_STEPPERLDS_CK,	PIN_STEPPERLDS_ENABLE,	PIN_STEPPERLDS_CW,		PIN_STEPPERLDS_HOME,		PIN_STEPPERLDS_END);
+
+	byte ckState = 0;
+
+
+	#define MINIMUM_INTERRUPT_INTERVAL_MSEC 1
+
+	// Genera il clock per LDS Stepper
+	ISR(timer5Event)
+	{
+		// Reset Timer1 (resetTimer1 should be the first operation for better timer precision)
+		resetTimer5();
+		// For a smaller and faster code, the line above could safely be replaced with a call
+		// to the function resetTimer1Unsafe() as, despite its name, it IS safe to call
+		// that function in here (interrupts are disabled)
+
+		// Make sure to do your work as fast as possible, since interrupts are automatically
+		// disabled when this event happens (refer to interrupts() and noInterrupts() for
+		// more information on that)
+
+		// Toggle led's state
+		ckState ^= 1;
+		//digitalWriteFast(13, ckState);
+
+		digitalWriteFast(PIN_STEPPERLDS_CK, ckState);
+	}
+
+
+	void ISRstepperSwitchHome() {
+		static unsigned long last_interrupt_timeHome = 0;
+		unsigned long interrupt_time = millis();
+		// If interrupts come faster than 200ms, assume it's a bounce and ignore
+		if (interrupt_time - last_interrupt_timeHome > MINIMUM_INTERRUPT_INTERVAL_MSEC)
+		{
+			myLDSstepper.setHomePosition(true);
+			myLDSstepper.setCW(false);  ///.disable();
+		}
+		last_interrupt_timeHome = interrupt_time;
+	}
+
+	void ISRstepperSwitchEnd() {
+		static unsigned long last_interrupt_timeEnd = 0;
+		unsigned long interrupt_time = millis();
+		// If interrupts come faster than 200ms, assume it's a bounce and ignore
+		if (interrupt_time - last_interrupt_timeEnd > MINIMUM_INTERRUPT_INTERVAL_MSEC)
+		{
+
+			myLDSstepper.setEndPosition(true);
+			myLDSstepper.setCW(true);  ///.disable();
+		}
+		last_interrupt_timeEnd = interrupt_time;
+	}
+
+
+	// versione pe Interrupt su Change
+	void ISRldsHome() {
+		static unsigned long last_interrupt_timeHome = 0;
+		unsigned long interrupt_time = millis();
+		// If interrupts come faster than 200ms, assume it's a bounce and ignore
+		if (interrupt_time - last_interrupt_timeHome > MINIMUM_INTERRUPT_INTERVAL_MSEC)
+		{
+			int x = digitalReadFast(PIN_STEPPERLDS_HOME);
+			if (x == 0)
+			{
+				myLDSstepper.setHomePosition(true);
+				myLDSstepper.setCW(true);  ///.disable();
+
+			}
+			else
+			{
+				myLDSstepper.setHomePosition(false);
+				myLDSstepper.enable();
+
+			}
+
+		}
+		last_interrupt_timeHome = interrupt_time;
+	}
+	void ISRldsEnd() {
+		static unsigned long last_interrupt_timeEnd = 0;
+		unsigned long interrupt_time = millis();
+		// If interrupts come faster than 200ms, assume it's a bounce and ignore
+		if (interrupt_time - last_interrupt_timeEnd > MINIMUM_INTERRUPT_INTERVAL_MSEC)
+		{
+			int x = digitalReadFast(PIN_STEPPERLDS_END);
+			if (x == 0)
+			{
+				//myLDSstepper.setHomePosition(true);
+				myLDSstepper.setCW(false);  ///.disable();
+
+			}
+			else
+			{
+				//myLDSstepper.setHomePosition(false);
+				myLDSstepper.enable();
+
+			}
+
+		}
+		last_interrupt_timeEnd = interrupt_time;
+	}
+
+
+	void setup_StepperLDS(float speed = 2 * PI) {
+		pinMode(PIN_STEPPERLDS_HOME, INPUT_PULLUP);// open => +5v ; closed =>gnd
+		pinMode(PIN_STEPPERLDS_END, INPUT_PULLUP);// open >+5 closed =gnd
+												  //attachPinChangeInterrupt(PIN_STEPPERLDS_HOME, ISRstepperSwitchHome, CHANGE);  // add more attachInterrupt code as required
+												  //attachPinChangeInterrupt(PIN_STEPPERLDS_END, ISRstepperSwitchEnd, CHANGE);  // add more attachInterrupt code as required
+
+		attachPinChangeInterrupt(PIN_STEPPERLDS_HOME, ISRstepperSwitchHome, FALLING);  // add more attachInterrupt code as required
+		attachPinChangeInterrupt(PIN_STEPPERLDS_END, ISRstepperSwitchEnd, FALLING);  // add more attachInterrupt code as required
+																					 // start stepper
+		myLDSstepper.goRadsPerSecond(speed);
+	}
+
+#endif
+
+
+
+
+
+
+
+
+
+
+
+
+ 
 #define sgn(x) ((x > 0) - (x < 0))
 #define SERIAL_DBG	Serial
 #define SERIAL_DBG_BAUD_RATE 115200
 
-#include <Timer5/Timer5.h>
-
-//#include <NewTone\NewTone.h>
-
-#include <MyStepper\myStepper.h>
-myStepper_c myLDSstepper(PIN_STEPPERLDS_CK,PIN_STEPPERLDS_ENABLE,PIN_STEPPERLDS_CW, PIN_STEPPERLDS_HOME);
-String inString = "";    // string to hold input
+ 
+ 
+ String inString = "";    // string to hold input
 float speed = PI;
 #define MINIMUM_INTERRUPT_INTERVAL_MSEC 1
 
 
-void ISRstepperSwitchHome() {
-	static unsigned long last_interrupt_time = 0;
-	unsigned long interrupt_time = millis();
-	// If interrupts come faster than 200ms, assume it's a bounce and ignore
-	if (interrupt_time - last_interrupt_time > MINIMUM_INTERRUPT_INTERVAL_MSEC)
-	{
-		int x  = digitalReadFast(PIN_STEPPERLDS_HOME);
-		if (x ==0)
-		{
-			myLDSstepper.setHomePosition(true);
-			LEDTOP_B_ON;
-			 ///.disable();
-			myLDSstepper.goRadsPerSecond(speed); //myLDSstepper.setCW(true);  ///.disable();
-
-		}
-		else
-		{
-			myLDSstepper.setHomePosition(false);
-			LEDTOP_B_OFF;
-			//myLDSstepper.enable();
-				
-		}
-
-	}
-	last_interrupt_time = interrupt_time;
-}
-
-void ISRstepperSwitchEnd() {
-	static unsigned long last_interrupt_time = 0;
-	unsigned long interrupt_time = millis();
-	// If interrupts come faster than 200ms, assume it's a bounce and ignore
-	if (interrupt_time - last_interrupt_time > MINIMUM_INTERRUPT_INTERVAL_MSEC)
-	{
-		int x  = digitalReadFast(PIN_STEPPERLDS_END);
-		if (x ==0)
-		{
-			//myLDSstepper.setHomePosition(true);
-			LEDTOP_G_ON;
-			myLDSstepper.goRadsPerSecond(-3*speed);//myLDSstepper.setCW(false);  ///.disable();
-
-		}
-		else
-		{
-			//myLDSstepper.setHomePosition(false);
-			LEDTOP_G_OFF;
-			//myLDSstepper.enable();
-				
-		}
-
-	}
-	last_interrupt_time = interrupt_time;
-}
+ 
+ 
+ //byte ckState = 0;
+//ISR(timer5Event) //TIMER STEPPER
+//{
+//	// Reset Timer1 (resetTimer1 should be the first operation for better timer precision)
+//	resetTimer5();
+//	// For a smaller and faster code, the line above could safely be replaced with a call
+//	// to the function resetTimer1Unsafe() as, despite its name, it IS safe to call
+//	// that function in here (interrupts are disabled)
+//
+//	// Make sure to do your work as fast as possible, since interrupts are automatically
+//	// disabled when this event happens (refer to interrupts() and noInterrupts() for
+//	// more information on that)
+//
+//	// Toggle led's state
+//	ckState ^= 1;
+//	digitalWriteFast(13, ckState);
+//
+//	digitalWriteFast(PIN_STEPPERLDS_CK, ckState);
+//}
+void setup() {
+	initRobotBaseHW();
+	LEDTOP_R_ON
+//	SERIAL_DBG.begin(SERIAL_DBG_BAUD_RATE);
 
  
- byte ckState = 0;
-ISR(timer5Event) //TIMER STEPPER
-{
-	// Reset Timer1 (resetTimer1 should be the first operation for better timer precision)
-	resetTimer5();
-	// For a smaller and faster code, the line above could safely be replaced with a call
-	// to the function resetTimer1Unsafe() as, despite its name, it IS safe to call
-	// that function in here (interrupts are disabled)
 
-	// Make sure to do your work as fast as possible, since interrupts are automatically
-	// disabled when this event happens (refer to interrupts() and noInterrupts() for
-	// more information on that)
+	setup_StepperLDS();  // lo fa partire con la veloccità di default
+	setup_LDS();
 
-	// Toggle led's state
-	ckState ^= 1;
-	digitalWriteFast(13, ckState);
+	MSG("s.END--")
 
-	digitalWriteFast(PIN_STEPPERLDS_CK, ckState);
-}
-void setup() {
-	Serial3.begin(115200);
-	Serial.begin(115200);
-	dbg("\nTest LDS Stepper -------")
+	LEDTOP_R_OFF
 
-	pinMode(PIN_STEPPERLDS_HOME, INPUT_PULLUP);// open >+5 closed =gnd
-	pinMode(PIN_STEPPERLDS_END, INPUT_PULLUP);// open >+5 closed =gnd
-	SERIAL_DBG.begin(SERIAL_DBG_BAUD_RATE);
-	attachPinChangeInterrupt(PIN_STEPPERLDS_HOME, ISRstepperSwitchHome,CHANGE );  // add more attachInterrupt code as required
-	attachPinChangeInterrupt(PIN_STEPPERLDS_END, ISRstepperSwitchEnd,CHANGE );  // add more attachInterrupt code as required
-	myLDSstepper.goRadsPerSecond(0.0);
-
-
-
-	dbg("click LDS home switch to start..")
-	while (!myLDSstepper.isHomePosition()) { delay(200); }
+//	MSG("click LDS home switch to start..")
+//	while (!myLDSstepper.isHomePosition()) { delay(200); }
 /*
 	// test home switch-------------------
 	dbg("click LDS home switch..")
@@ -167,18 +326,16 @@ void setup() {
 
 	 
 
-	//myLDSstepper.goHome(-5);
-	//while (!digitalReadFast(PIN_STEPPERLDS_stop)){}
-	//myLDSstepper.goRadsPerSecond(0);
-
-	//speed *= -1;
+ 
 
 
-	myLDSstepper.goRadsPerSecond(speed);
+}	
 
-
-}
+uint16_t range_mm = 0;
+int i = 0;
+bool acquiring = false;
 void loop() {
+	/*
 	//input velocità
 	while (Serial.available() > 0) {
 		int inChar = Serial.read();
@@ -203,6 +360,7 @@ void loop() {
 			myLDSstepper.goRadsPerSecond(speed);
 		}
 	}
+	*/
 /*
 //	speed += sgn(speed)*0.1;
 	Serial.print("Speed: ");Serial.println(speed);
@@ -223,17 +381,40 @@ void loop() {
 
 
 	// sostituto di goHome
-	while (!myLDSstepper.isHomePosition()) { delay(200); }
+	//while (!myLDSstepper.isHomePosition()) { delay(200); }
+
+	//lettura LDS ----------------------------
+
+		if (myLDSstepper.isEndPosition())
+		{
+			LASER_ON;
+			acquiring = true;
+			i = 0;
+			//for (size_t i = 0; i < 10; i++)
+			while (acquiring)
+			{
+				MSG2("i :", i++);
+				range_mm = LDS.readRangeSingleMillimeters();
+				MSG2("mm :", range_mm);
+				//delay(100);
+				TOGGLEPIN(Pin_LED_TOP_B);
+				delay(100);
+				if (myLDSstepper.isHomePosition())
+				{
+					acquiring = false;
+					LASER_OFF;
+					MSG("-----------");
+					delay(100);
+
+				}
+				
+			}
+ 
+
+		}
 
 
 
-	//lettura LDS dummy----------------------------
-	for (size_t i = 0; i < 10; i++)
-	{
-		dbg2("i :", i);
-		delay(500);
-		
-	}
 	// attendo l'inversione del moto da parte dell'interrupt di finecorsa
  
 
