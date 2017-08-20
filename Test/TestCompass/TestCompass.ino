@@ -6,7 +6,7 @@ Ver: 0.1 beta --- Start
 Ver: 0.2 beta --- Debug feature included
 */
 
-#include <Wire\Wire.h>
+#include <Wire.h>
 //#include <compass\compass.h>
 #include <compass\compass.h>
  MyCompass_c compass;
@@ -32,7 +32,7 @@ void setup(){
   
   compass.begin(1);  // original gain =2
   compass.compass_debug = 1;
-  compass.compass_offset_calibration(3);
+//  compass.compass_offset_calibration(3);
 
 
 }
@@ -49,7 +49,7 @@ void loop(){
   
   compass.compass_scalled_reading();
   
-  Serial.print("x = ");
+  Serial.print("\nx = ");
   Serial.println(compass.compass_x_scalled);
   Serial.print("y = ");
   Serial.println(compass.compass_y_scalled);
@@ -62,9 +62,9 @@ void loop(){
   Serial.print (compass.bearing);
   Serial.println(" Degree");
   
-  dt = millis()-t; 
+  dt = millis()-t; //mediamente 3mS
   Serial.print ("Load on processor ms= ");
-  Serial.print(dt);
+  Serial.println(dt);
    
 
   

@@ -36,7 +36,8 @@
 #pragma region CREAZIONE OGGETTI GLOBALI
  
  #include <robot.h>
-  
+ robot_c robot;
+
 // Interrupt service routines for the right motor's quadrature encoder
 void HandleRightMotorInterruptA()
 {
@@ -99,7 +100,7 @@ void loop()
     LEDTOP_B_ON
 
     Serial.print( "\n1,Moving Forward ;" );
-    robot.go(commandDir_e::GOF, robotSpeed_e::MEDIUM);
+    robot.go(MyRobotFullModel::commandDir_e::GOF, MyRobotFullModel::robotSpeed_e::MEDIUM);
     //cmPercorsi= robot.moveCm(30);
         while (robot.status.cmd.stepsDone/ ROBOT_MOTOR_STEPS_PER_CM < distanceCm)
         {

@@ -69,7 +69,7 @@ ros::NodeHandle_<WiFiHardware> nh;
 void setupWiFi()
 {
   WiFi.begin(ssid, password);
-  Serial.print("\nConnecting to "); Serial.println(ssid);
+//  Serial.print("\nConnecting to "); Serial.println(ssid);
   uint8_t i = 0;
   while (WiFi.status() != WL_CONNECTED && i++ < 20) delay(500);
   if(i == 21){
@@ -82,18 +82,19 @@ void setupWiFi()
   }
   else //ok connesso
   {
-	  // led acceso per 2 secondi
-	  digitalWrite(LED_BUILTIN, 1);
-	  delay(2000);
-	  digitalWrite(LED_BUILTIN, 0);
-		
-	  //Serial.print("Ready! Use ");
-	  //Serial.print(WiFi.localIP());
-	  //Serial.println(" to access client");
-	  Serial.print(1); //ok connected
+		// led acceso per 2 secondi
+		digitalWrite(LED_BUILTIN, 1);	  delay(200); 	  digitalWrite(LED_BUILTIN, 0);
+		digitalWrite(LED_BUILTIN, 1);	  delay(200); 	  digitalWrite(LED_BUILTIN, 0);
+		digitalWrite(LED_BUILTIN, 1);	  delay(200); 	  digitalWrite(LED_BUILTIN, 0);
+		digitalWrite(LED_BUILTIN, 1);	
+		//Serial.print("Ready! Use ");
+		//Serial.print(WiFi.localIP());
+		//Serial.println(" to access client");
+		//Serial.print(1); //ok connected
   }
 }
 //--mia aggiunta ------------------------------
+/*
 #include <std_msgs/String.h>
 
 std_msgs::String str_msg;
@@ -109,18 +110,17 @@ void publish_chatter(char* charVal) {
 
 }
 //-------------------------------------------------
+ */
 void setup() {
 	Serial.begin(57600);
-	digitalWrite(LED_BUILTIN, 0);
 	pinMode(LED_BUILTIN, OUTPUT);
+	digitalWrite(LED_BUILTIN, 0);
 
 	setupWiFi();
 
-	//s.attach(2);  // PWM pin
-	nh.initNode();
-	//nh.subscribe(sub);
-	//nh.advertise(chatter);
-}
+ 	nh.initNode();
+ }
+
 char strVal[10];
 int cnt = 0;
 
@@ -134,50 +134,29 @@ uint8_t i2 = 0;
 
 
 void loop() {
-	/*
-	itoa(cnt++, strVal,1);
-	publish_chatter("ESPwifi");
-	publish_chatter(strVal);
-
-  nh.spinOnce();
-  delay(500);
-
-  delay(500);
-*/
-  // here we have a connected client
-	//while (nh.connected())
-	//{
-		if (client.available()) {
-			while (client.available()) {
-				buf1[i1] = (uint8_t)client.read(); // read char from client (RoboRemo app)
-				if (i1<1023) i1++;
-				//digitalWrite(LED_BUILTIN, 1);
-				digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
-			}
-			// now send to UART:
-			Serial.write(buf1, i1);
-			i1 = 0;
+   // here we have a connected client
+ 	if (client.available()) {
+		while (client.available()) {
+			buf1[i1] = (uint8_t)client.read(); // read char from client (RoboRemo app)
+			if (i1<1023) i1++;
+			//digitalWrite(LED_BUILTIN, 1);
+			digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
 		}
+		// now send to UART:
+		Serial.write(buf1, i1);
+		i1 = 0;
+	}
 
-		if (Serial.available()) {
-			while (Serial.available()) {
-				buf2[i2] = (char)Serial.read(); // read char from UART
-				if (i2<1023) i2++;
-				digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
-				//digitalWrite(LED_BUILTIN, 0);
-			}
-			// now send to WiFi:
-			client.write((char*)buf2, i2);
-			i2 = 0;
+	if (Serial.available()) {
+		while (Serial.available()) {
+			buf2[i2] = (char)Serial.read(); // read char from UART
+			if (i2<1023) i2++;
+			digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
+			//digitalWrite(LED_BUILTIN, 0);
 		}
-
-	//}
-
-	//while (!nh.connected())
-	//{
-	//	nh.initNode();
-	//}
-  //delay(100);
-
-
+		// now send to WiFi:
+		client.write((char*)buf2, i2);
+		i2 = 0;
+	}
+ 
 }

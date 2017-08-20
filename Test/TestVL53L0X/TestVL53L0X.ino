@@ -6,7 +6,7 @@
  "SingleRanging" examples in the VL53L0X API.
 
  The range readings are in units of mm. */
-#define SERIAL_PC Serial			//  MMI > Serial3  Test > Serial
+#define SerialSERIAL_PC Serial			//  MMI > Serial3  Test > Serial
 #define SERIAL_PC_BAUD_RATE 115200
 #define SERIAL_MMI Serial1			//  MMI > Serial3  Test > Serial
 #define SERIAL_MMI_BAUD_RATE 115200
@@ -19,9 +19,10 @@
 
 
 // utilizzo di Wire - bloccante se il sensore è spento o non risponde
-#include <Wire\Wire.h>
+//#include <Wire\Wire.h>
+#include <arduino.h>
+#include <Wire.h>
 // verione non bloccante da 
-//#include <arduino.h>
 //#include <nbWire\nbWire.h>
 //#include <I2Cdev\I2Cdev.h>
 #include <VL53L0X.h>
@@ -49,9 +50,10 @@ VL53L0X LDS;
 
 void setup()
 {
-	SERIAL_PC.begin(SERIAL_PC_BAUD_RATE);
+	Serial.begin(SERIAL_PC_BAUD_RATE);
 	SERIAL_MMI.begin(SERIAL_MMI_BAUD_RATE);
- 	Wire.begin();
+	//Wire.begin();
+	Wire.begin(D5, D6);
 	//Wire.setTimeout(1000);
 	Serial.println("test VL53L0X distance sensor");
 	Serial.print("inizializzo...");
@@ -92,21 +94,26 @@ void setup()
 	#endif
 }
 uint16_t d = 0;
-
+uint32_t t1, t2;
 
 void loop()
 { 
+	t1 = millis();
 	d = LDS.readRangeSingleMillimeters();
- 	//SERIAL_MMI.print("\n1,"); SERIAL_MMI.print(d); SERIAL_MMI.print(";");
+	t2 = millis();
+	//SERIAL_MMI.print("\n1,"); SERIAL_MMI.print(d); SERIAL_MMI.print(";");
 	//SERIAL_PC.print("\n1,"); 
-	//SERIAL_PC.println(d);// SERIAL_PC.print(";");
-	MSG2("LDS :", d);
+//	Serial.println(d);// SERIAL_PC.print(";");
+	MSG2("LDS mm:", d);
+	MSG2(" dt:", t2-t1);
+
 	if (LDS.timeoutOccurred()) { 
+		Serial.println("LDS Timeout");
 		MSG("  TIMEOUT ");
 		Wire.begin();
 
 		LDS.init();
 
 	}
-
+	delay(1000);
  }

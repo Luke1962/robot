@@ -2,112 +2,77 @@
 // no ROS
 // usa MMI 
 
+#pragma region ROBOT_SEGMENT
+#define OPT_ROBOT 0
+	/// ///////////////////////////////////////////////////////////////////////////////
+	// LIBRERIE DI BASE
+	/// ///////////////////////////////////////////////////////////////////////////////
+	#include <Arduino.h>	//per AttachInterrupt
+	#include <digitalWriteFast.h>
+	#include <I2Cdev\I2Cdev.h>
 
-//////////////////////////////////////////////////////////////////////////////////
-// CONFIGURAZIONE DEL SISTEMA                  ///////////////////////////////////
-//////////////////////////////////////////////////////////////////////////////////
-#pragma region CONFIGURAZIONE DEL SISTEMA   
-	//#define delay(ms) chThdSleepMilliseconds(ms) 
+	//////////////////////////////////////////////////////////////////////////////////
+	// CONFIGURAZIONE DEL SISTEMA                  ///////////////////////////////////
+	//////////////////////////////////////////////////////////////////////////////////
+	#pragma region CONFIGURAZIONE DEL SISTEMA   
+		//#define delay(ms) chThdSleepMilliseconds(ms) 
 
-	//#include <MyRobotLibs\dbg.h>
+		//#include <MyRobotLibs\dbg.h>
 	#include <MyRobotLibs\dbgCore.h>
 
 	#include <MyRobotLibs\systemConfig.h>
 	#include <MyRobotLibs\hw_config.h>
 
-#pragma endregion
+	#pragma endregion
 
-#pragma region LIBRERIE
-// ////////////////////////////////////////////////////////////////////////////////////////////
-// ///																						///
-// ///       LIBRERIE 																		///
-// ///		Aggiungere ciascun percorso nelle proprietà del progetto in Visual Studio 		///
-// ///		Configuration Properties >C++ > Path											///
-// ////////////////////////////////////////////////////////////////////////////////////////////
-	/// ///////////////////////////////////////////////////////////////////////////////
-	// LIBRERIE VARIE
-	/// ///////////////////////////////////////////////////////////////////////////////
-	#include <digitalWriteFast.h>
+	#pragma region LIBRERIE
+	// ////////////////////////////////////////////////////////////////////////////////////////////
+	// ///																						///
+	// ///       LIBRERIE 																		///
+	// ///		Aggiungere ciascun percorso nelle proprietà del progetto in Visual Studio 		///
+	// ///		Configuration Properties >C++ > Path											///
+	// ////////////////////////////////////////////////////////////////////////////////////////////
 	//#include <ChibiOS_AVR.h>
 	//#include <util/atomic.h>
 	//#include <TinyGPSplus/TinyGPS++.h>
 	//#include <StackArray.h>
-	#include <avr/interrupt.h>
+//	#include <avr/interrupt.h>
 
-	#include <Arduino.h>	//per AttachInterrupt
 
-	#include <I2Cdev\I2Cdev.h>
 
-#pragma endregion
+	#pragma endregion
 
 
 
 
-// ////////////////////////////////////////////////////////////////////////////////////////////
-//  CREAZIONE OGGETTI GLOBALI
-// ////////////////////////////////////////////////////////////////////////////////////////////
-#pragma region CREAZIONE OGGETTI GLOBALI
+	// ////////////////////////////////////////////////////////////////////////////////////////////
+	//  CREAZIONE OGGETTI GLOBALI E RELATIVE LIBRERIE
+	// ////////////////////////////////////////////////////////////////////////////////////////////
+	#pragma region CREAZIONE OGGETTI GLOBALI
 	#if OPT_MPU6050
-
-		#include <MPU6050\MPU6050_6Axis_MotionApps20.h>
-		//	#include <MPU6050\MPU6050.h> // not necessary if using MotionApps include file
-
-		// Arduino Wire library is required if I2Cdev I2CDEV_ARDUINO_WIRE implementation
-		// is used in I2Cdev.h
-		#if I2CDEV_IMPLEMENTATION == I2CDEV_ARDUINO_WIRE
-			#include "Wire.h"
-		#endif
-
-		// class default I2C address is 0x68
-		// specific I2C addresses may be passed as a parameter here
-		// AD0 low = 0x68 (default for SparkFun breakout and InvenSense evaluation board)
-		// AD0 high = 0x69
+		#include <Wire.h>
+		#include <MPU6050.h>
 		MPU6050 mpu;
-		//MPU6050 mpu(0x69); // <-- use for AD0 high
-
-
-		// MPU control/status vars
-		bool dmpReady = false;  // set true if DMP init was successful
-		uint8_t mpuIntStatus;   // holds actual interrupt status byte from MPU
-		uint8_t devStatus;      // return status after each device operation (0 = success, !0 = error)
-		uint16_t packetSize;    // expected DMP packet size (default is 42 bytes)
-		uint16_t fifoCount;     // count of all bytes currently in FIFO
-		uint8_t fifoBuffer[64]; // FIFO storage buffer
-
-								// orientation/motion vars
-		Quaternion q;           // [w, x, y, z]         quaternion container
-		VectorInt16 aa;         // [x, y, z]            accel sensor measurements
-		VectorInt16 aaReal;     // [x, y, z]            gravity-free accel sensor measurements
-		VectorInt16 aaWorld;    // [x, y, z]            world-frame accel sensor measurements
-		VectorFloat gravity;    // [x, y, z]            gravity vector
-		float euler[3];         // [psi, theta, phi]    Euler angle container
-		float ypr[3];           // [yaw, pitch, roll]   yaw/pitch/roll container and gravity vector
-
-		void setupMPU() {
-			MSG("MPU Init ...");
-
-			mpu.initialize();
-			Serial.println(mpu.testConnection() ? "MPU6050 connected" : "MPU6050 connection failed");
-			// load and configure the DMP
-			//		devStatus = mpu.dmpInitialize();
-			// supply your own gyro offsets here, scaled for min sensitivity
-			mpu.setXGyroOffset(220);
-			mpu.setYGyroOffset(76);
-			mpu.setZGyroOffset(-85);
-			mpu.setZAccelOffset(1788); // 1688 factory default for my test chip
-
+ 
+		void setup_MPU() {
+			while (!mpu.begin(MPU6050_SCALE_2000DPS, MPU6050_RANGE_2G))
+			{
+				Serial.println(F("No MPU6050 sensor, check wiring!"));
+				delay(500);
+			}
+ 
+			mpu.setI2CMasterModeEnabled(false);
+			mpu.setI2CBypassEnabled(true);
+			mpu.setSleepEnabled(false);
 		}
 
 	#endif // OPT_MPU6050
 
 
 	#if OPT_COMPASS
-		#include <Wire\Wire.h>
+		#include <Wire.h>
 		#include <compass\compass.h>
 		MyCompass_c compass;
-		//#include <Adafruit_Sensor\Adafruit_Sensor.h> //richiesto dalla liberia compass Adafruit_HMC5883_U
-		//#include <HMC5883L\HMC5883L.h>
-		//HMC5883L compass;
 	#endif // COMPASS
 
 	#if OPT_SONAR
@@ -115,33 +80,17 @@
 		NewPing sonar(Pin_SonarTrig, Pin_SonarEcho);
 	#endif //
 
-	#if OPT_SERVOSONAR
-		// va messo prima dell'istanza del robot
-		#include <Servo\src\Servo.h>
-		#include <Servo.h> //deve restare qui altrimenti il linker s'incazza (??)
-
-		#include <PWM\PWM.h>
-		Servo servoSonar;
-	#endif
-
 	#if OPT_GPS
 		#include <TinyGPSplus\TinyGPS++.h> //deve essere incluso anche nel main
-
 		TinyGPSPlus Gps;
 	#endif
 
 	#pragma region VL53L0X distanceSensor
 
 	#if OPT_LDS
-		#include <Wire\Wire.h>
+		#include <Wire.h>
 		#include <VL53L0X\VL53L0X.h>
 		VL53L0X LDS;
-		// Uncomment this line to use long range mode. This
-		// increases the sensitivity of the distanceSensor and extends its
-		// potential range, but increases the likelihood of getting
-		// an inaccurate reading because of reflections from objects
-		// other than the intended target. It works best in dark
-		// conditions.
 		#define LONG_RANGE
 		// Uncomment ONE of these two lines to get
 		// - higher speed at the cost of lower accuracy OR
@@ -154,7 +103,7 @@
 		bool setupLDS() {
 			byte failCount = 0;
 			bool initDone = false;
-			while (!initDone && ( failCount < 10))
+			while (!initDone && (failCount < 10))
 			{
 				MSG("LDS init...");
 				if (LDS.init())
@@ -172,149 +121,155 @@
 
 			}
 			return initDone;
-}
+		}
 
 	#endif // OPT_LDS
 
 
 
 	#if OPT_STEPPERLDS
-		#include <Timer5/Timer5.h>
-		#include <PinChangeInt\PinChangeInt.h>	//https://github.com/NicoHood/PinChangeInterrupt
-		#include <MyStepper\myStepper.h>
-		myStepper_c myLDSstepper(PIN_STEPPERLDS_CK, PIN_STEPPERLDS_ENABLE, PIN_STEPPERLDS_CW, PIN_STEPPERLDS_END);
+	#include <Timer5/Timer5.h>
+	#include <PinChangeInt\PinChangeInt.h>	//https://github.com/NicoHood/PinChangeInterrupt
+	#include <MyStepper\myStepper.h>
+	myStepper_c myLDSstepper(PIN_STEPPERLDS_CK, PIN_STEPPERLDS_ENABLE, PIN_STEPPERLDS_CW, PIN_STEPPERLDS_END);
 
-		byte ckState = 0;
+	byte ckState = 0;
 
 
-		#define MINIMUM_INTERRUPT_INTERVAL_MSEC 1
+	#define MINIMUM_INTERRUPT_INTERVAL_MSEC 1
 
-		// Genera il clock per LDS Stepper
-		ISR(timer5Event)
+	// Genera il clock per LDS Stepper
+	ISR(timer5Event)
+	{
+		// Reset Timer1 (resetTimer1 should be the first operation for better timer precision)
+		resetTimer5();
+		// For a smaller and faster code, the line above could safely be replaced with a call
+		// to the function resetTimer1Unsafe() as, despite its name, it IS safe to call
+		// that function in here (interrupts are disabled)
+
+		// Make sure to do your work as fast as possible, since interrupts are automatically
+		// disabled when this event happens (refer to interrupts() and noInterrupts() for
+		// more information on that)
+
+		// Toggle led's state
+		ckState ^= 1;
+		//digitalWriteFast(13, ckState);
+
+		digitalWriteFast(PIN_STEPPERLDS_CK, ckState);
+	}
+
+
+	void ISRstepperSwitchHome() {
+		static unsigned long last_interrupt_timeHome = 0;
+		unsigned long interrupt_time = millis();
+		// If interrupts come faster than 200ms, assume it's a bounce and ignore
+		if (interrupt_time - last_interrupt_timeHome > MINIMUM_INTERRUPT_INTERVAL_MSEC)
 		{
-			// Reset Timer1 (resetTimer1 should be the first operation for better timer precision)
-			resetTimer5();
-			// For a smaller and faster code, the line above could safely be replaced with a call
-			// to the function resetTimer1Unsafe() as, despite its name, it IS safe to call
-			// that function in here (interrupts are disabled)
-
-			// Make sure to do your work as fast as possible, since interrupts are automatically
-			// disabled when this event happens (refer to interrupts() and noInterrupts() for
-			// more information on that)
-
-			// Toggle led's state
-			ckState ^= 1;
-			//digitalWriteFast(13, ckState);
-
-			digitalWriteFast(PIN_STEPPERLDS_CK, ckState);
+			myLDSstepper.setHomePosition(true);
+			myLDSstepper.setCW(true);  ///.disable();
 		}
+		last_interrupt_timeHome = interrupt_time;
+	}
 
+	void ISRstepperSwitchEnd() {
+		static unsigned long last_interrupt_timeEnd = 0;
+		unsigned long interrupt_time = millis();
+		// If interrupts come faster than 200ms, assume it's a bounce and ignore
+		if (interrupt_time - last_interrupt_timeEnd > MINIMUM_INTERRUPT_INTERVAL_MSEC)
+		{
 
-		void ISRstepperSwitchHome() {
-			static unsigned long last_interrupt_timeHome = 0;
-			unsigned long interrupt_time = millis();
-			// If interrupts come faster than 200ms, assume it's a bounce and ignore
-			if (interrupt_time - last_interrupt_timeHome > MINIMUM_INTERRUPT_INTERVAL_MSEC)
-			{
-					myLDSstepper.setHomePosition(true);
-					myLDSstepper.setCW(true);  ///.disable();
-			}
-			last_interrupt_timeHome = interrupt_time;
+			myLDSstepper.setEndPosition(true);
+			myLDSstepper.setCW(false);  ///.disable();
 		}
+		last_interrupt_timeEnd = interrupt_time;
+	}
 
-		void ISRstepperSwitchEnd() {
-			static unsigned long last_interrupt_timeEnd = 0;
-			unsigned long interrupt_time = millis();
-			// If interrupts come faster than 200ms, assume it's a bounce and ignore
-			if (interrupt_time - last_interrupt_timeEnd > MINIMUM_INTERRUPT_INTERVAL_MSEC)
+
+	// versione pe Interrupt su Change
+	void ISRldsHome() {
+		static unsigned long last_interrupt_timeHome = 0;
+		unsigned long interrupt_time = millis();
+		// If interrupts come faster than 200ms, assume it's a bounce and ignore
+		if (interrupt_time - last_interrupt_timeHome > MINIMUM_INTERRUPT_INTERVAL_MSEC)
+		{
+			int x = digitalReadFast(PIN_STEPPERLDS_HOME);
+			if (x == 0)
 			{
-
-					myLDSstepper.setEndPosition(true);
-					myLDSstepper.setCW(false);  ///.disable();
-			}
-			last_interrupt_timeEnd = interrupt_time;
-		}
-
-
-		// versione pe Interrupt su Change
-		void ISRldsHome() {
-			static unsigned long last_interrupt_timeHome = 0;
-			unsigned long interrupt_time = millis();
-			// If interrupts come faster than 200ms, assume it's a bounce and ignore
-			if (interrupt_time - last_interrupt_timeHome > MINIMUM_INTERRUPT_INTERVAL_MSEC)
-			{
-				int x = digitalReadFast(PIN_STEPPERLDS_HOME);
-				if (x == 0)
-				{
-					myLDSstepper.setHomePosition(true);
-					myLDSstepper.setCW(true);  ///.disable();
-
-				}
-				else
-				{
-					myLDSstepper.setHomePosition(false);
-					myLDSstepper.enable();
-
-				}
+				myLDSstepper.setHomePosition(true);
+				myLDSstepper.setCW(true);  ///.disable();
 
 			}
-			last_interrupt_timeHome = interrupt_time;
-		}
-		void ISRldsEnd() {
-			static unsigned long last_interrupt_timeEnd = 0;
-			unsigned long interrupt_time = millis();
-			// If interrupts come faster than 200ms, assume it's a bounce and ignore
-			if (interrupt_time - last_interrupt_timeEnd > MINIMUM_INTERRUPT_INTERVAL_MSEC)
+			else
 			{
-				int x = digitalReadFast(PIN_STEPPERLDS_END);
-				if (x == 0)
-				{
-					//myLDSstepper.setHomePosition(true);
-					myLDSstepper.setCW(false);  ///.disable();
-
-				}
-				else
-				{
-					//myLDSstepper.setHomePosition(false);
-					myLDSstepper.enable();
-
-				}
+				myLDSstepper.setHomePosition(false);
+				myLDSstepper.enable();
 
 			}
-			last_interrupt_timeEnd = interrupt_time;
+
 		}
+		last_interrupt_timeHome = interrupt_time;
+	}
+	void ISRldsEnd() {
+		static unsigned long last_interrupt_timeEnd = 0;
+		unsigned long interrupt_time = millis();
+		// If interrupts come faster than 200ms, assume it's a bounce and ignore
+		if (interrupt_time - last_interrupt_timeEnd > MINIMUM_INTERRUPT_INTERVAL_MSEC)
+		{
+			int x = digitalReadFast(PIN_STEPPERLDS_END);
+			if (x == 0)
+			{
+				//myLDSstepper.setHomePosition(true);
+				myLDSstepper.setCW(false);  ///.disable();
+
+			}
+			else
+			{
+				//myLDSstepper.setHomePosition(false);
+				myLDSstepper.enable();
+
+			}
+
+		}
+		last_interrupt_timeEnd = interrupt_time;
+	}
 
 
-		void setupStepperLDS(float speed = 2*PI) {
-			pinMode(PIN_STEPPERLDS_HOME, INPUT_PULLUP);// open >+5 closed =gnd
-			pinMode(PIN_STEPPERLDS_END, INPUT_PULLUP);// open >+5 closed =gnd
-			//attachPinChangeInterrupt(PIN_STEPPERLDS_HOME, ISRstepperSwitchHome, CHANGE);  // add more attachInterrupt code as required
-			//attachPinChangeInterrupt(PIN_STEPPERLDS_END, ISRstepperSwitchEnd, CHANGE);  // add more attachInterrupt code as required
+	void setupStepperLDS(float speed = 2 * PI) {
+		pinMode(PIN_STEPPERLDS_HOME, INPUT_PULLUP);// open >+5 closed =gnd
+		pinMode(PIN_STEPPERLDS_END, INPUT_PULLUP);// open >+5 closed =gnd
+		//attachPinChangeInterrupt(PIN_STEPPERLDS_HOME, ISRstepperSwitchHome, CHANGE);  // add more attachInterrupt code as required
+		//attachPinChangeInterrupt(PIN_STEPPERLDS_END, ISRstepperSwitchEnd, CHANGE);  // add more attachInterrupt code as required
 
-			attachPinChangeInterrupt(PIN_STEPPERLDS_HOME, ISRstepperSwitchHome, FALLING);  // add more attachInterrupt code as required
-			attachPinChangeInterrupt(PIN_STEPPERLDS_END, ISRstepperSwitchEnd, FALLING);  // add more attachInterrupt code as required
-																						// start stepper
-			myLDSstepper.goRadsPerSecond(speed);
-}
+		attachPinChangeInterrupt(PIN_STEPPERLDS_HOME, ISRstepperSwitchHome, FALLING);  // add more attachInterrupt code as required
+		attachPinChangeInterrupt(PIN_STEPPERLDS_END, ISRstepperSwitchEnd, FALLING);  // add more attachInterrupt code as required
+																					// start stepper
+		myLDSstepper.goRadsPerSecond(speed);
+	}
 
 	#endif
 
 
 
 	// per i test
-		int targetAngle = 0;
-		int freeDistCm = 0;
-		char charVal[10];
+	int targetAngle = 0;
+	int freeDistCm = 0;
+	char charVal[10];
 
 	#pragma endregion
+//	using namespace robSmall;
+	#include <MyRobotModelSmall\MyRobotModelSmall.h>
 
-	#include <robot.h>
-	struct robot_c robot;	//was  struct robot_c robot;
 
+	//struct robot_c rob;	//was  struct robot_c robot;
+	MyRobotModelSmall::robotBaseSmallModel_c rob;	//was  struct robot_c robot;
+
+	#include <MyStepperBase\MyStepperBase.h>
+	StepperBase_c robotMotors;
+	//volatile StepperBase_c robotMotors(Pin_MotCK,Pin_MotENL,Pin_MotENR,Pin_MotCWL,Pin_MotCWR;
 
 	// ////////////////////////////////////////////////////////////////////////////////////////////
 	#if OPT_ENCODERS
-	// dopo dichiarazione di robot
+	// dopo dichiarazione di rob
 		// ########################################################################################
 		// ########################################################################################
 		// ENCODER ISR
@@ -322,73 +277,48 @@
 		// ########################################################################################
 		// ########################################################################################
 		// Interrupt service routines for the right motor's quadrature encoder
-		volatile bool interruptFlag = false;
-		volatile uint32_t robotstatussensorsEncR = 0;
-		volatile unsigned long isrCurrCallmSec = 0;
-		volatile unsigned long isrLastCallmSec = 0;
-		
-		#define ISR_MINMUM_INTERVAL_MSEC 20  //deve essere < 30 = circa ROBOT_MOTOR_STEPS_PER_ENCODERTICK * ROBOT_MOTOR_CLOCK_microsecondMIN /1000 I= 12.5*2500/1000
-/*		void ISRencoder() //versione che usa targetEncoderThicks
-		{
-			if (robot.status.cmd.targetEncoderThicks > 0) //faccio lavorare l'ISR solo se targetEncoderThicks> 0
-			{
-				isrCurrCallmSec = millis();
+	volatile bool interruptFlag = false;
+	volatile uint32_t robotstatussensorsEncR = 0;
+	volatile unsigned long isrCurrCallmSec = 0;
+	volatile unsigned long isrLastCallmSec = 0;
 
-				if (isrCurrCallmSec > (isrLastCallmSec + ISR_MINMUM_INTERVAL_MSEC))
-				{
-					//LEDTOP_B_ON
-					isrLastCallmSec = isrCurrCallmSec;
-					robot.status.sensors.EncR += 1;
-					if (robot.status.sensors.EncR > robot.status.cmd.targetEncoderThicks)
-					{
-						//LEDTOP_G_ON
-							robot.stop();
-						//MOTORS_DISABLE
-						robot.status.cmd.targetEncoderThicks = 0;
+	#define ISR_MINMUM_INTERVAL_MSEC 20  //deve essere < 30 = circa ROBOT_MOTOR_STEPS_PER_ENCODERTICK * ROBOT_MOTOR_CLOCK_microsecondMIN /1000 I= 12.5*2500/1000
 
-					}
-					LEDTOP_B_OFF
-				}
-
-			}
-
-		}
-	*/
 
 		// versione per comandi basati su cmd_vel
 		// incrementa solo il contatore
 		// chi legge deve poi  resettarlo e applicare le logiche per capire se
 		// il movimento era linerare o rotatorio e  in quale direzione
-		void ISRencoderR() {		
-			isrCurrCallmSec = millis();
+	void ISRencoderR() {
+		isrCurrCallmSec = millis();
 
-			// trascorso tempo minimo?
-			if (isrCurrCallmSec > (isrLastCallmSec + ISR_MINMUM_INTERVAL_MSEC))
+		// trascorso tempo minimo?
+		if (isrCurrCallmSec > (isrLastCallmSec + ISR_MINMUM_INTERVAL_MSEC))
+		{
+			//lettura encoder
+			rob.status.sensors.encR = digitalReadFast(Pin_EncRa);
+			// cambiato il valore ?
+			if (rob.status.sensors.encRprec != rob.status.sensors.encR)
 			{
-				//lettura encoder
-				robot.status.sensors.encR = digitalReadFast(Pin_EncRa);
-				// cambiato il valore ?
-				if (robot.status.sensors.encRprec != robot.status.sensors.encR)
-				{
-					TOGGLEPIN(Pin_LED_TOP_G);
-					isrLastCallmSec = isrCurrCallmSec;
-					// incrementa
-					robot.status.sensors.encRcnt += 1;
-					robot.status.sensors.encRprec = robot.status.sensors.encR;
-				}
+				TOGGLEPIN(Pin_LED_TOP_G);
+				isrLastCallmSec = isrCurrCallmSec;
+				// incrementa
+				rob.status.sensors.encRcnt += 1;
+				rob.status.sensors.encRprec = rob.status.sensors.encR;
 			}
 		}
+	}
 
-		void setupEncoders() {
-			pinMode(Pin_EncRa, INPUT);// open >+5 closed =gnd
-		// was 	attachInterrupt(digitalPinToInterrupt(Pin_EncRa), ISRencoderR, CHANGE);
-			attachPinChangeInterrupt(Pin_EncRa, ISRencoderR, CHANGE);  // add more attachInterrupt code as required
+	void setupEncoders() {
+		pinMode(Pin_EncRa, INPUT);// open >+5 closed =gnd
+	// was 	attachInterrupt(digitalPinToInterrupt(Pin_EncRa), ISRencoderR, CHANGE);
+		attachPinChangeInterrupt(Pin_EncRa, ISRencoderR, CHANGE);  // add more attachInterrupt code as required
 
-		}
+	}
 
 	#endif
 
-
+/*
 	// ////////////////////////////////////////////////////////////////////////////////////////////
 	//  CmdMessenger object to the default Serial port
 	// ////////////////////////////////////////////////////////////////////////////////////////////
@@ -397,35 +327,35 @@
 	#include <MyRobotLibs\RobotInterfaceCommands2.h>
 	// usare le macro  MSG per inviare messaggi sia su Serial_PC, sia Serial_MMI
 	//------------------------------------------------------------------------------
+*/
 
 
 
 
+	#pragma endregion
 
-#pragma endregion
-
-#pragma region Helper Functions: lampeggiaLed, countDown, ledSeq1
-	// ////////////////////////////////////////////////////////////////////////////////////////////
-	//  FUNZIONI E UTILITIES GLOBALI
-	// ////////////////////////////////////////////////////////////////////////////////////////////
-	//void playSingleNote(int pin, int freq,int noteDuration) {
-	//	tone(pin, freq, noteDuration);
-	//	noTone(pin);
-	//}
-  
- 
+	#pragma region Helper Functions: lampeggiaLed, countDown, ledSeq1
+		// ////////////////////////////////////////////////////////////////////////////////////////////
+		//  FUNZIONI E UTILITIES GLOBALI
+		// ////////////////////////////////////////////////////////////////////////////////////////////
+		//void playSingleNote(int pin, int freq,int noteDuration) {
+		//	tone(pin, freq, noteDuration);
+		//	noTone(pin);
+		//}
 
 
-	// ////////////////////////////////////////////////////////////////////////////////////////////
-	///  bloccante
+
+
+		// ////////////////////////////////////////////////////////////////////////////////////////////
+		///  bloccante
 	void lampeggiaLed(int pin, int freq, uint16_t nvolte) {
 		int ms = 500 / freq;
 		for (size_t i = 0; i < nvolte; i++)
 		{
 			digitalWriteFast(pin, 1);
-			chThdSleepMilliseconds(ms);
+			delay(ms);
 			digitalWriteFast(pin, 0);
-			chThdSleepMilliseconds(ms);
+			delay(ms);
 
 		}
 
@@ -441,35 +371,99 @@
 		}
 	}
 	// ////////////////////////////////////////////////////////////////////////////////////////////
-	void ledSeq1() {
+	void ledSeq1(int ms) {
 		LEDTOP_R_ON	// Indica inizio SETUP Phase
-			delay(300);
+			delay(ms);
 		LEDTOP_R_OFF
 
-		LEDTOP_G_ON	// Indica inizio SETUP Phase
-			delay(300);
+			LEDTOP_G_ON	// Indica inizio SETUP Phase
+			delay(ms);
 		LEDTOP_G_OFF
 
-		LEDTOP_B_ON	// Indica inizio SETUP Phase
-			delay(300);
+			LEDTOP_B_ON	// Indica inizio SETUP Phase
+			delay(ms);
 		LEDTOP_B_OFF
 
 	}
 
 	void MSG2F(char * c, float f) {
-		#define CHARFLOATSIZE 7
-		#define CHARFLOATDECS 4
+	#define CHARFLOATSIZE 7
+	#define CHARFLOATDECS 4
 		char charVal[CHARFLOATSIZE];  //temporarily holds data from vals
 		 //4 is mininum width, 3 is precision; float value is copied onto buff
 		dtostrf(f, CHARFLOATSIZE, CHARFLOATDECS, charVal);
 		SERIAL_MMI.print("1,");
 		SERIAL_MMI.print(c);
 		SERIAL_MMI.print(charVal);
-		SERIAL_MMI.println(F(";"));	
+		SERIAL_MMI.println(F(";"));
 	}
 
-// ////////////////////////////////////////////////////////////////////////////////////////////
-#pragma endregion
+	// ////////////////////////////////////////////////////////////////////////////////////////////
+	#pragma endregion
+
+
+	void setup_Robot()
+	{
+		initRobotBaseHW();
+		LEDTOP_R_ON	// Indica inizio SETUP Phase
+		MOTORS_DISABLE
+
+		//InitTimersSafe(); //initialize all timers except for 0, to save time keeping functions
+ 
+		delay(5000);  //PER DARE IL TEMPO ALL COMPASS DI RISPONDERE 5 ok
+		Wire.begin(); // default timeout 1000ms
+
+		#if OPT_ENCODERS
+
+				setupEncoders();
+		#endif
+
+		#if OPT_MPU6050
+
+				setup_MPU();
+		#endif
+
+		#if OPT_GPS
+				//rob.initRobot(&Gps);
+		#endif
+		#if OPT_LDS
+				//rob.initRobot(&LDS);
+				//setupLDS(); 	//rob.initLDS(&LDS);
+		#endif
+		#if OPT_COMPASS
+				//rob.initRobot(&compass);
+				//rob.initCompass(&compass);//include compass.begin();
+											//	rob.compassCalibrate();
+
+		#endif
+		#if OPT_STEPPERLDS
+				//rob.initRobot(&myLDSstepper);
+				setupStepperLDS(); //avvia lo stepper
+		#endif
+
+		#if OPT_SEROVOSONAR
+				//rob.initRobot(&servoSonar);
+		#endif
+
+
+		//rob.initRobot(); //inizializza solo le variabili
+		//rob.initModel(); //inizializza solo le variabili
+		STEPPERLDS_OFF
+
+			//	noTone(Pin_LED_TOP_R);
+
+	}
+
+
+
+#pragma endregion //ROBOT SEGMENT
+
+
+
+
+
+
+
 
 
 /// ///////////////////////////////////////////////////////////////////////////////
@@ -479,23 +473,25 @@
 ///
 // / ///////////////////////////////////////////////////////////////////////////////
 /// ///////////////////////////////////////////////////////////////////////////////
-#pragma region ROS Libraries and Variables
-	#include <math.h>
-	#include <ros.h>
-	#include <ros/duration.h>
-	#include <ros/time.h> //non serve
-	#include <ros/msg.h>
-	#include <std_msgs/String.h>
-	#include <std_msgs/Empty.h>
-	#include <std_msgs/Float64.h>
-	#include <std_msgs/String.h>
+#pragma region ROS_SEGMENT
+	#pragma region ROS Libraries and Variables
+		#include <math.h>
+		#include <ros.h>
+		#include <ros/duration.h>
+		#include <ros/time.h> //non serve
+		#include <ros/msg.h>
+		#include <std_msgs/String.h>
+		#include <std_msgs/Empty.h>
+		#include <std_msgs/Float64.h>
+		#include <std_msgs/String.h>
 
-	//#include <ros_lib\sensor_msgs\Range.h>
-	#include <sensor_msgs/Range.h>
-	#include <tf/transform_broadcaster.h>
+		//#include <ros_lib\sensor_msgs\Range.h>
+		#include <sensor_msgs/Range.h>
+		#include <tf/transform_broadcaster.h>
 
  
-	ros::NodeHandle  nh;
+		ros::NodeHandle  nh;
+	#pragma endregion
 
 	#pragma region ROS HELPER FUNCTIONS
 		/// ///////////////////////////////////////////////////////////////////////////////
@@ -505,11 +501,11 @@
 		#define ROS_INFO(s) nh.loginfo(s);
 
 		void ROS_INFO2F(char * c, float f) {
-		#define CHARFLOATSIZE 10
-		#define CHARFLOATDECS 3
-			char charVal[CHARFLOATSIZE];  //temporarily holds data from vals
+		#define CHRFLOATSIZE 7
+		#define CHRFLOATDECS 3
+			char charVal[CHRFLOATSIZE];  //temporarily holds data from vals
 										  //4 is mininum width, 3 is precision; float value is copied onto buff
-			dtostrf(f, CHARFLOATSIZE, CHARFLOATDECS, charVal);
+			dtostrf(f, CHRFLOATSIZE, CHRFLOATDECS, charVal);
 			nh.loginfo(c);
 			nh.loginfo(charVal);
 		}
@@ -585,11 +581,11 @@
 				t.header.frame_id = odom_frame_id;
 				t.child_frame_id = base_link_frame_id;
 
-				t.transform.translation.x = robot.status.posCurrent.x / 1000;
-				t.transform.translation.y = robot.status.posCurrent.y / 1000;
+				t.transform.translation.x = rob.status.posCurrent.x / 1000;
+				t.transform.translation.y = rob.status.posCurrent.y / 1000;
 				t.transform.translation.z = 0.0;
 
-				t.transform.rotation = tf::createQuaternionFromYaw((float)robot.status.posCurrent.r*DEG_TO_RAD);
+				t.transform.rotation = tf::createQuaternionFromYaw((float)rob.status.posCurrent.r*DEG_TO_RAD);
 
 
 				broadcaster.sendTransform(t);
@@ -604,6 +600,11 @@
 
 
 	#pragma endregion
+		//-----------------------------------------------------------------------//
+		//-----------------------------------------------------------------------//
+		//  velocity                                ---------------------------------//
+		//-----------------------------------------------------------------------//
+		//-----------------------------------------------------------------------//
 
 
 
@@ -614,8 +615,8 @@
 		//  odom                                ---------------------------------//
 		//-----------------------------------------------------------------------//
 		//-----------------------------------------------------------------------//
-		#include <tf/tf.h>		// richiesto da  createQuaternionFromYaw
-		#include <tf/transform_broadcaster.h>
+		//#include <tf/tf.h>		// richiesto da  createQuaternionFromYaw
+		//#include <tf/transform_broadcaster.h>
 		#include <nav_msgs/Odometry.h>
 		unsigned long odom_time;
 		//double x = 0.0;
@@ -646,11 +647,11 @@
 				//odom_trans.header.stamp = nh.now();
 				//odom_trans.header.frame_id = odom_frame_id;
 				//odom_trans.child_frame_id = base_link_frame_id;
-				//odom_trans.transform.translation.x = robot.status.posCurrent.x/1000;
-				//odom_trans.transform.translation.y = robot.status.posCurrent.y/1000;
+				//odom_trans.transform.translation.x = rob.status.posCurrent.x/1000;
+				//odom_trans.transform.translation.y = rob.status.posCurrent.y/1000;
 				//odom_trans.transform.translation.z = 0.0;
 				////since all odometry is 6DOF we'll need a quaternion created from yaw
-				//odom_trans.transform.rotation = tf::createQuaternionFromYaw((float)robot.status.posCurrent.r*DEG_TO_RAD);
+				//odom_trans.transform.rotation = tf::createQuaternionFromYaw((float)rob.status.posCurrent.r*DEG_TO_RAD);
 				////send the transform
 				//odom_broadcaster.sendTransform(odom_trans);
 
@@ -660,16 +661,16 @@
 				rosmsg_odom.header.frame_id = odom_frame_id;
 
 				//set the position
-				rosmsg_odom.pose.pose.position.x = (float)robot.status.posCurrent.x/1000;
-				rosmsg_odom.pose.pose.position.y = (float)robot.status.posCurrent.y/1000;
+				rosmsg_odom.pose.pose.position.x = (float)rob.status.posCurrent.x/1000;
+				rosmsg_odom.pose.pose.position.y = (float)rob.status.posCurrent.y/1000;
 				rosmsg_odom.pose.pose.position.z = 0.0;
-				rosmsg_odom.pose.pose.orientation = tf::createQuaternionFromYaw((float)robot.status.posCurrent.r*DEG_TO_RAD);
+				rosmsg_odom.pose.pose.orientation = tf::createQuaternionFromYaw((float)rob.status.posCurrent.r*DEG_TO_RAD);
 
 				//set the velocity
 				rosmsg_odom.child_frame_id = base_link_frame_id;
-				rosmsg_odom.twist.twist.linear.x = robot.status.cmd.targetVelocityLinear;
+				rosmsg_odom.twist.twist.linear.x = rob.status.cmd.targetVelocityLinear;
 				rosmsg_odom.twist.twist.linear.y = 0;
-				rosmsg_odom.twist.twist.angular.z = robot.status.cmd.targetVelocityAngular;
+				rosmsg_odom.twist.twist.angular.z = rob.status.cmd.targetVelocityAngular;
 
 				//publish the message
 				pub_odom.publish(&rosmsg_odom);
@@ -720,19 +721,21 @@
 		void rosCb_cmd_vel(const geometry_msgs::Twist & cmdVel)
 		{
 
-			//ROS_INFO2F("cmd_vel.x:", robot.status.cmd.targetVelocityLinear);
-			//ROS_INFO2F("cmd_vel.z:", robot.status.cmd.targetVelocityAngular);
+			//ROS_INFO2F("cmd_vel.x:", rob.status.cmd.targetVelocityLinear);
+			//ROS_INFO2F("cmd_vel.z:", rob.status.cmd.targetVelocityAngular);
 			if ((cmdVel.angular.z != 0.0) || (cmdVel.linear.x != 0.0))
 			{
 				ROS_INFO("rosCb_cmd_vel");
-				//MSG2F("cmd_vel x", robot.status.cmd.targetVelocityLinear);
-				//MSG2F("cmd_vel z", robot.status.cmd.targetVelocityAngular); 			
-				robot.goCmdVel(cmdVel.linear.x, cmdVel.angular.z);
+				//MSG2F("cmd_vel x", rob.status.cmd.targetVelocityLinear);
+				//MSG2F("cmd_vel z", rob.status.cmd.targetVelocityAngular); 			
+				rob.updPoseFromEncoders();
+				robotMotors.goCmdVel(cmdVel.linear.x, cmdVel.angular.z);
 			}
 			else
 			{
 				ROS_INFO("stop");
-				robot.stop();
+				robotMotors.stop();
+				rob.updPoseFromEncoders();
 
 			}
 		}
@@ -747,6 +750,29 @@
 	#pragma endregion
 
 
+
+	void setup_ROS() {
+		MSG("s.ROS")
+		nh.getHardware()->setBaud(57600);
+		nh.initNode();
+
+		//	broadcaster.init(nh);
+		//	ROS_INFO("ROBOT SETUP COMPLETE");
+
+		setup_cmd_vel();
+		setup_odom();
+		setup_chatter();
+
+		//setup_speech();
+		//setup_ultrasound();
+		//setup_laserscan();
+
+		nh.spinOnce();
+	//	ROS_INFO("ROS SETUP COMPLETE");
+
+	}
+
+
 #pragma endregion
 
 
@@ -759,85 +785,6 @@
 //  S E T U P
 // ########################################################################################
 // ########################################################################################
-void setupRobot()
-{
-	//lampeggiaLed(Pin_LED_TOP_R, 3, 5);
-	//lampeggiaLed(Pin_LED_TOP_G, 3, 5);
-	//lampeggiaLed(Pin_LED_TOP_B, 3, 5);
-	LEDTOP_R_ON	// Indica inizio SETUP Phase
-	MOTORS_DISABLE
-
-	InitTimersSafe(); //initialize all timers except for 0, to save time keeping functions
-					  //sets the frequency for the specified pin
-					  //bool success = SetPinFrequencySafe(Pin_LED_TOP_R, 2);
-
-	////if the pin frequency was set successfully, turn pin 13 on
-	//if (success) {
-	//	digitalWrite(Pin_LED_TOP_B, HIGH);
-	//	pwmWrite(Pin_LED_TOP_R, 128); //set 128 to obtain 50%duty cyle
-	//	SetPinFrequency(Pin_LED_TOP_R, 2); //setting the frequency to 10 Hz
-	//}
-
-	delay(5000);  //PER DARE IL TEMPO ALL COMPASS DI RISPONDERE 5 ok
-	Wire.begin(); // default timeout 1000ms
-
-	#if OPT_ENCODERS
-
-		setupEncoders();
-	#endif
-
-	#if OPT_MPU6050
-
-		setupMPU();
-	#endif
-
-	#if OPT_GPS
-		robot.initRobot(&Gps);
-	#endif
-	#if OPT_LDS
-		robot.initRobot(&LDS);
-		//setupLDS(); 	//robot.initLDS(&LDS);
-	#endif
-	#if OPT_COMPASS
-		robot.initRobot(&compass);
-		robot.initCompass(&compass);//include compass.begin();
-		//	robot.compassCalibrate();
-
-	#endif
-	#if OPT_STEPPERLDS
-		robot.initRobot(&myLDSstepper);
-		setupStepperLDS(); //avvia lo stepper
-	#endif
-
-	#if OPT_SEROVOSONAR
-		robot.initRobot(&servoSonar);
-	#endif
-
-
-	robot.initRobot(); //inizializza solo le variabili
-
-	//	noTone(Pin_LED_TOP_R);
-
-}
-void setupRos() {
-	nh.initNode();
-	nh.getHardware()->setBaud(57600);
-
-//	broadcaster.init(nh);
-//	ROS_INFO("ROBOT SETUP COMPLETE");
-
-	setup_cmd_vel();
-	setup_odom();
-	setup_chatter();
-
-	//setup_speech();
-	//setup_ultrasound();
-	//setup_laserscan();
-
-	nh.spinOnce();
-//	ROS_INFO("ROS SETUP COMPLETE");
-
-}
 
 void setup()
 {
@@ -847,21 +794,22 @@ void setup()
 	SERIAL_MMI.begin(SERIAL_MMI_BAUD_RATE);
 	SERIAL_GPS.begin(SERIAL_GPS_BAUD_RATE);
  
-	nh.getHardware()->setBaud(57600);
-	//MSG("===Test Robot In Out===")
-	nh.initNode();
-	nh.subscribe(command_cmd_vel);
-//	nh.advertise(pub_odom);
+	//nh.getHardware()->setBaud(57600);
+	//nh.initNode();
 
-	setupRobot();
-	myLDSstepper.disable();
+
+	//nh.subscribe(command_cmd_vel);
+	//nh.advertise(pub_odom);
+	setup_ROS();
+	setup_Robot();
+
 
 	//setupRos();
 	//ROS_INFO("ROS SETUP COMPLETE");
 
 	LEDTOP_ALL_OFF;
 	LEDTOP_B_ON
-	//robot.initHW(); //disabilita i motori
+	//rob.initHW(); //disabilita i motori
 					//	tone(Pin_LED_TOP_R, 2, 0);
 	//MSG("ACCENDI I MOTORI")
 	//countDown(5);
@@ -872,32 +820,38 @@ void setup()
 	LEDTOP_B_OFF
   }
 
+
+
 int loopCounter = 1;
 void loop() {
-	ledSeq1();
+	ledSeq1(90);
 	nh.spinOnce();
 
+	robotMotors.goCmdVel(0, 0.5);
+	delay(3000);
+	robotMotors.stop();
+
 	//MSG("====================")
-	//MSG2("Start Test Seq. #", loopCounter++);
+	MSG2("ENC.cnt: ", rob.status.sensors.encRcnt);
 
 
 
 	//publish_tf();
-	robot.updatePoseFromEncoders(); // aggiorna robot.status.posCurrent
-//	publish_odom();//pubblica in odom robot.status.posCurrent
+	rob.updPoseFromEncoders(); // aggiorna rob.status.posCurrent
+	publish_odom();//pubblica in odom rob.status.posCurrent
 	//publish_chatter("hello");
 	//publish_speech();
 	//publish_ultrasound();
 	//publish_laserscan(); // acquisisce le distanze...
 
-	//MSG2("pose.x:", robot.status.posCurrent.x);
-	//MSG2("pose.y:", robot.status.posCurrent.y);
-	//MSG2("pose.r:", robot.status.posCurrent.r);
+	//MSG2("pose.x:", rob.status.posCurrent.x);
+	//MSG2("pose.y:", rob.status.posCurrent.y);
+	//MSG2("pose.r:", rob.status.posCurrent.r);
 	
 
 	//testGPS();
 	//MSG("======== end ========")
-	delay(500);
+	delay(50);
 }
 
 

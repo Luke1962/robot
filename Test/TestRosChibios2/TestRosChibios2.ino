@@ -125,7 +125,8 @@
 
 
 	#if OPT_COMPASS
-	#include <Wire\Wire.h>
+	//#include <Wire\Wire.h>
+	#include "Wire.h"
 	#include <compass\compass.h>
 		MyCompass_c compass;
 		//#include <Adafruit_Sensor\Adafruit_Sensor.h> //richiesto dalla liberia compass Adafruit_HMC5883_U
@@ -153,7 +154,8 @@
 	#pragma region VL53L0X distanceSensor
 
 	#if OPT_LDS
-	#include <Wire\Wire.h>
+	//#include <Wire\Wire.h>
+	#include "Wire.h"
 	#include <VL53L0X\VL53L0X.h>
 		VL53L0X LDS;
 		// Uncomment this line to use long range mode. This
