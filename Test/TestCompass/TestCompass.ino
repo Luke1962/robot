@@ -5,12 +5,24 @@ Location: Pakistan
 Ver: 0.1 beta --- Start
 Ver: 0.2 beta --- Debug feature included
 */
+///////////////////////////////////////////////
+// INCLUDE HARDWARE MINIMO					///
+// Chiamare  initRobotBaseHW();				///
+///////////////////////////////////////////////
+#include <MyRobotLibs\hw_config\hw_config.h>
+///////////////////////////////////////////////
+#include <MyRobotLibs\msgCore\msgCore.h>
 
 #include <Wire.h>
 //#include <compass\compass.h>
-#include <compass\compass.h>
- MyCompass_c compass;
-#include <MyRobotLibs\robot.h>
+
+//#include <HMC5883L/HMC5883L.h>//
+//HMC5883L compass; //MyCompass_c compass;
+
+#include <MyRobotLibs\MyCompass\MyCompass.h>		
+MyCompass_c compass;
+
+//#include <MyRobotLibs\robot.h>
 
 #define Task_t 10          // Task Time in milli seconds
 
